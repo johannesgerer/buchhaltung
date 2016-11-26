@@ -1,0 +1,9 @@
+#!/bin/bash
+
+d="`date "+%Y/%m/%d" `"
+t="`date "+%T" `"
+btc_usd="`curl -s https://www.bitstamp.net/api/ticker/ | sed -re 's/.*"bid": "([^"]*)".*/\1/'`"
+usd_eur="`curl -s http://query.yahooapis.com/v1/public/yql\?q\=select%20\*%20from%20yahoo.finance.xchange%20where%20pair%20in%20\(%22USDEUR%22\)\&format\=json\&env\=store%3A%2F%2Fdatatables.org%2Falltableswithkeys\&callback\= | sed -re 's/.*"Rate":"([^"]*)".*/\1/'`"
+# usd_eur="`curl -s http://rate-exchange.appspot.com/currency\?from\=USD\&to\=EUR | sed -re 's/.*"rate": *([0-9.]*),.*/\1/'`"
+r=$(echo "$btc_usd * $usd_eur" | bc)
+echo P $d $t BTC $r EUR
