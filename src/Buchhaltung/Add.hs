@@ -21,13 +21,15 @@ import           Control.Monad.RWS.Strict
 import           Data.Char
 import           Data.Decimal
 import           Data.Either
+import           Data.Foldable
 import           Data.Function
-import qualified Data.HashMap.Strict as M
+import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.List.NonEmpty as E
 import           Data.List.Utils (replace)
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
+import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Monoid ((<>))
 import qualified Data.Monoid as Mo
@@ -37,7 +39,8 @@ import           Data.String
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
-import           Data.Time.LocalTime
+import           Data.Time.Clock
+import           Data.Time.Format
 import           Formatting (sformat, (%), (%.))
 import qualified Formatting as F
 import qualified Formatting.ShortFormatters as F
@@ -248,7 +251,7 @@ finishTransaction :: (MonadIO m, MonadReader AddOptions m)
                   -- ^ (user's, partners') transactions
 finishTransaction _ Nothing = return (Nothing, [])
 finishTransaction check (Just (tr,postings)) = do
-  time <- liftIO getZonedTime
+  time <- liftIO getCurrentTime
   us <- user
   let
     (userP, partnerPS) = split postings
@@ -270,12 +273,15 @@ finishTransaction check (Just (tr,postings)) = do
                    else [nullposting{paccount = acc
                                     ,pamount = am}]
 
-    comment = sformat ("Entered on "%F.sh%" by "%F.sh) time $ name us
+    comment = sformat ("Entered on "%F.sh%" by 'buchhaltung' user "%F.sh)
+      (iso8601 time) $ name us
     err = (error.("shit, it should be balanced, check source code\n\n"++))
     increasePrec p = p{pamount = setMixedAmountPrecision maxprecisionwithpoint
                         $ pamount p}
   return $ (userT, partnerT <$> partnerPS)
         
+iso8601 :: UTCTime -> String
+iso8601 = formatTime defaultTimeLocale "%FT%TZ"
         
 -- | add transaction to ledger file    
 myJournalAddTransaction :: FilePath -> [Transaction] -> AddT IO Journal
@@ -304,7 +310,7 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
     r@(_, iAm) <- second negate <$> askAmount (Just $ mixed' nullamt)
       "Enter amount (zero for any transaction)" Nothing
     
-    accs <- S.fromList . M.elems <$> readUser (fromBankAccounts . bankAccounts)
+    accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
     user <- readUser id
     let
       f user accs t@Transaction{tpostings=p1:(p2:_)} =
@@ -564,6 +570,38 @@ parseAmount
   :: Journal
      -> T.Text -> Either (MP.ParseError Char MP.Dec) Amount
 parseAmount j = parseWithState' j amountp
+
+-- | (unused) overwrite upstream behavior to use defined or incurred
+-- commodities
+amountp2 = MP.try leftsymbolamountp
+  MP.<|> MP.try rightsymbolamountp
+  MP.<|> nosymbolamountp2
+
+nosymbolamountp2 :: Monad m => JournalStateParser m Amount
+nosymbolamountp2 = do
+  (q,prec,mdec,mgrps) <- lift numberp
+  p <- priceamountp
+  -- apply the most recently seen default commodity and style to this commodityless amount
+  defcs <- getDefaultCommodityAndStyle2 <$> get
+  let (c,s) = case defcs of
+        Just (defc,defs) -> (defc, defs{asprecision=max (asprecision defs) prec})
+        Nothing          -> ("", amountstyle{asprecision=prec, asdecimalpoint=mdec, asdigitgroups=mgrps})
+  return $ Amount c q p s
+  MP.<?> "no-symbol amount"
+
+getDefaultCommodityAndStyle2
+  :: Journal
+  -> Maybe (CommoditySymbol,AmountStyle)
+getDefaultCommodityAndStyle2
+  Journal{jparsedefaultcommodity=def
+         ,jcommodities=comms
+         ,jinferredcommodities=inferred} =
+  let mm = listToMaybe . M.toList in
+    asum
+    [def
+    ,traverse cformat =<< mm comms
+    ,mm inferred
+    ]
 
 
 askPercent :: IO Decimal

@@ -279,12 +279,12 @@ paypalImport email = CsvImport
                                          , " Währung"]
         , cDescription = getCsvConcat
                          [" Name"
-                         ," An E-Mail-Adresse"
-                         ," Von E-Mail-Adresse"
+                         -- ," An E-Mail-Adresse"
+                         -- ," Von E-Mail-Adresse"
                          ," Verwendungszweck"
                          ," Art"
-                         ," Status"
-                         ," Käufer-ID"
+                         --," Status"
+                         --," Käufer-ID"
                          ," Zeit"]
         , cDate = parseDatum . getCsv "Datum"
         , cVDate = const Nothing

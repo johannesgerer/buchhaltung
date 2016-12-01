@@ -82,3 +82,7 @@ withTempFile tmpDir template action =
 
 ignoringIOErrors :: MonadBaseControl IO m => m () -> m ()
 ignoringIOErrors ioe = ioe `E.catch` (\e -> const (return ()) (e :: IOError))
+
+mconcat' :: Monoid t => [t] -> t
+mconcat' [] = mempty
+mconcat' x = foldr1 mappend x
