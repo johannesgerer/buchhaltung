@@ -173,7 +173,6 @@ prettyPrint cost new old remain =
         ++ showError oldSource
 
 
--- | todo undefined check do not upate ieSource?
 applyChanges :: ImportTag -> (Key, FilledEntry)
              -> Key -> Entry -> Entry
 applyChanges tag ((ams2,acc2,day2,_),newEntry)

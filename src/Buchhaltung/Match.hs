@@ -67,12 +67,12 @@ match options j = maybe (liftIO $ print "No unmatched transactions")
                       (S.fromList $ fst <$> done, differentiate todos) :: ErrorT IO ()
 
 -- | Apply the first matching 'Todo'
-changePosting :: [Update] -> [Maybe (Transaction, Transaction)]
-changePosting = fmap g
-  where
-    g WithSource{ wInfo = Nothing } = Nothing
-    g up = Just (wTx up, tPosts . ix (wIdx up) . pAcc .~ (fromJust $ wInfo up) $ wTx up)
+updateAccountName :: Update -> Maybe (Transaction, Transaction)
+updateAccountName WithSource{ wInfo = Nothing } = Nothing
+updateAccountName up =
+  Just (wTx up, tPosts . ix (wIdx up) . pAcc .~ (fromJust $ wInfo up) $ wTx up)
 
+printSource :: Source -> String
 printSource = P.render . table [25,35] ["Field", "Value"] .
   (\(x,z) -> [x,z]) . unzip . M.toList . sourceToMap
 
@@ -89,7 +89,7 @@ mainLoop i = do
   account <- myAskAccount =<< suggestAccount tx -- 
   let
     g "save" = void $ saveChanges $ changeTransaction
-               $ changePosting $ integrate zip
+               $ mapMaybe updateAccountName $ integrate zip
     g "<" = prev zip
     g ">" = next zip
     g _   = do

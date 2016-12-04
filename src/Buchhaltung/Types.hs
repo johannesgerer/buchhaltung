@@ -47,11 +47,11 @@ import qualified Text.Regex.TDFA as R
 import qualified Text.Regex.TDFA.Text as R
 
 -- * Monad used for most of the funtionality
-  
+
 type CommonM env = RWST (FullOptions env) () () (ErrorT IO)
 
 -- * The Source of an imported transaction
-  
+
 -- | represents a key value store and a protocol
 data Source = Source { sFormat :: T.Text
                      , sStore :: M.Map T.Text T.Text }
@@ -83,7 +83,7 @@ stripPrefixOptions n = A.defaultOptions{A.fieldLabelModifier = g}
 
 -- * Import Tag
 
-  
+
 newtype ImportTag = ImportTag { fromImportTag :: T.Text }
   deriving ( Generic, Show)
 
@@ -94,7 +94,7 @@ instance IsString ImportTag where
   fromString = ImportTag . fromString
 
 -- * Error handling
-  
+
 type Msg = T.Text
 type Error = Either Msg
 type ErrorT = ExceptT Msg
@@ -128,11 +128,11 @@ lookupErrM description lookup k container =
   $ lookup k container
 
 -- * Options
-  
+
 data Options user config env = Options
-  { oAction :: Action
-  , oUser :: user
+  { oUser :: user
   , oProfile :: FilePath
+  , oAction :: Action
   , oConfig :: config
   , oEnv :: env
   }
@@ -149,7 +149,7 @@ toFull opts1@Options{oUser=user} config =
   (\u -> opts2{oUser = u}) <$>
   runReaderT (maybe (defaultUser 0) lookupUser user) opts2
   where opts2 = opts1 { oConfig = config }
-  
+
 -- ** Reading options
 
 readConfig :: MonadReader (Options user config env) m => (config -> a) -> m a
@@ -173,7 +173,7 @@ absolute
 absolute f = do prof <- reader oProfile
                 return $ prof </> f
 
-  
+
 -- * Config
 
 data Config = Config
@@ -187,6 +187,8 @@ data Config = Config
   -- ^ for every format a list of columns used in the bayesian
   -- classifier used in match
   , cDbaclExecutable :: FilePath
+  , cLedgerExecutable :: FilePath
+  , cHledgerExecutable :: FilePath
   }
   deriving ( Generic, Show )
 
@@ -199,9 +201,13 @@ askTodoFilter = return . L.isPrefixOf =<< readConfig cTodoAccount
 
 instance FromJSON Config where
   parseJSON (Object v) = do
+    -- ^ Users are configured as list, to have a defined order
     users <- parseJSON =<< v .: "users" :: A.Parser (V.Vector User)
     formats <- v .:? "formats" .!= mempty
     dbEx <- v .:? "dbaclExecutable" .!= "dbacl" :: Parser FilePath
+    [lEx, hlEx] <- forM ["", "h"] $ \pfx ->
+      v .:? (T.pack pfx <> "ledgerExecutable") .!= (pfx <> "ledger")
+      :: Parser FilePath
     return Config
       { cUsers = HM.fromList $ (\u -> (name u, u)) <$> V.toList users
       , cUserList = name <$> users
@@ -209,15 +215,17 @@ instance FromJSON Config where
       , cTodoAccount = "TODO"
       , cFormats = formats
       , cDbaclExecutable = dbEx
+      , cLedgerExecutable = lEx
+      , cHledgerExecutable = hlEx
       }
-      
+
   parseJSON invalid    = A.typeMismatch "Config" invalid
 
 readConfigFromFile :: FilePath -> IO Config
 readConfigFromFile path = either (error . prettyPrintParseException) id <$>
   decodeFileEither (path </> "config" <.> "yml") :: IO Config
 
-  
+
 -- * User
 
 data User = User
@@ -234,7 +242,7 @@ data User = User
   deriving ( Generic, Show, FromJSON )
 
 type Users = HM.HashMap Username User
-  
+
 newtype Username = Username T.Text
   deriving ( Generic, FromJSON, NFData, Eq, Hashable, A.FromJSONKey)
 
@@ -243,12 +251,12 @@ fromUsername (Username n) = n
 
 instance Show Username where
   show = T.unpack . fromUsername
-  
+
 instance Eq User where
   (==) = (==) `on` name
 
 -- ** Reading User settings
-  
+
 -- | Looks up a user and throws an error if they do not exist.
 lookupUser :: ( MonadError Msg m
               , MonadReader (Options user Config e) m)
@@ -274,6 +282,8 @@ data Ledgers = Ledgers
   { imported :: FilePath
   , addedByThisUser  :: FilePath
   , addedByOthers :: Maybe FilePath
+  , mainLedger :: FilePath -- ^ ledger file for 'ledger' CLI
+  , mainHledger :: Maybe FilePath -- ^ ledger file for 'hledger' CLI
   }
   deriving (Generic, Default, Show, FromJSON)
 
@@ -296,7 +306,7 @@ receivablePayable forThis other = do
   where msg =  "User '"%F.sh%"' has no accountPrefixOthers configured"
 
 -- ** A user's bank accounts
-  
+
 askAccountMap :: MonadReader (Options User config env) m =>  m AccountMap
 askAccountMap = readUser $ fromBankAccounts . bankAccounts
 
@@ -332,7 +342,7 @@ type AccountMap = HM.HashMap AccountId AccountName
 
 instance (Hashable a, Eq a) => Default (HM.HashMap a b) where
   def = mempty
-  
+
 instance FromJSON BankAccounts where
   parseJSON (Object v) = BankAccounts . HM.fromList . concat
     <$> traverse parseAccountMap (HM.toList v)
@@ -403,7 +413,7 @@ toArg HBCI300 = "300"
 
 type PaypalUsername = T.Text
 
-data Action = Add { aPartner :: [Username] }
+data Action = Add { aPartners :: [Username] }
             | Match
             | Import FilePath ImportAction
             | AQBanking { aqMatch :: Bool
@@ -412,6 +422,9 @@ data Action = Add { aPartner :: [Username] }
                         -- ^ request new transactions
                         }
             | Setup
+            | Ledger { lArgs :: [String] }
+            | HLedger { lArgs :: [String] }
+
   deriving (Show, Generic, NFData)
 
 

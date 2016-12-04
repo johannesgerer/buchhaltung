@@ -38,7 +38,8 @@ editLoopM :: MonadException m =>
             -> Either T.Text T.Text -- ^ use promtp: Left promp ++ [Def]:, or Right prompt
             -> Maybe T.Text -- ^ intitial readline text
             -> m c
-editLoopM extract histFileSuf def completionList prompt init = runInputT2 settings loop
+editLoopM extract histFileSuf def completionList prompt init =
+  runInputT2 settings loop
   where loop =  do s <- fromJust <$> getInput
                    let useDef = if s=="" then Just fst else Nothing
                        tryExtract = do

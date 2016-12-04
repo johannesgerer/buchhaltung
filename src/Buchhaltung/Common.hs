@@ -186,17 +186,16 @@ tPosts = lens tpostings $ \t y -> t{tpostings=y}
 pAcc :: Lens' Posting AccountName
 pAcc = lens paccount $ \p y -> p{paccount=y}
 
--- | changes a given transaction in a joiurnal an d counts the results
+-- | replaces every matching transaction in the given journal counts
+-- the number of changed transactions
 changeTransaction
-  :: [Maybe (Transaction, Transaction)]
+  :: [(Transaction, Transaction)]
   -> Journal
   -> (Journal, Integer)
 changeTransaction ts = countUpdates (jTrans . traverse) h
   where
     h t1 = asum $ fmap g ts
-      where g Nothing = Nothing
-            g (Just (t2, tNew)) | t1 == t2 = Just tNew
-            g _                 |  True    = Nothing
+      where g (t2, tNew) = guard (t1 == t2) *> Just tNew
   
 -- | Update a traversal and count the number of updates
 countUpdates :: Traversal' s a

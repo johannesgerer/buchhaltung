@@ -97,18 +97,18 @@ data Partner = Partner
              deriving (Show, Eq)
 
 data Remote = Remote { account :: AccountName
-                     , ledger :: FilePath}  
-  
+                     , ledger :: FilePath}
+
 -- | Extract partner information from the env and throw errors if there are any
 -- readPartner :: (MonadReader AddOptions m, MonadError Msg m)
 --             => (Partner -> a) -> m (Maybe a)
 -- readPartner f = reader $ fmap f . oEnv
-  
+
 -- -- | Extract partner user
 partners
   :: (MonadReader AddOptions m, MonadError Msg m) => m [Partner]
 partners = reader oEnv
-  
+
 -- * Entry point
 
 add :: AddT' [Username] IO ()
@@ -126,8 +126,8 @@ toPartner part = do
     <$> receivablePayable True  part
     <*> receivablePayable False part
     <*> maybeThrow msg ($ name part) return (addedByOthers $ ledgers part)
-  where msg = "ledgers.addedByOthers not configured for '"%F.sh%"'" 
-                 
+  where msg = "ledgers.addedByOthers not configured for '"%F.sh%"'"
+
 
 -- | Welcome message
 hello :: Monad m => AddT' env m String
@@ -140,8 +140,8 @@ hello = do
     ,"A code (in parentheses) may be entered following transaction dates."
     ,"A comment may be entered following descriptions or amounts."
     , show ( length $ jtxns j) ++ " Transactions found"
-    ] 
-  
+    ]
+
 
 -- | main user interaction loop
 mainLoop :: AddT IO ()
@@ -185,15 +185,15 @@ saveAndClear match clearIt (userT, partnerTS)  = do
         -- clear the first posting, of the new transaction, if there was a
         -- match -- ReferenceA
         let newt = (if isJust match then clearNthPosting 0 else id) res
-        -- add it to the user's journal (+ file)                
+        -- add it to the user's journal (+ file)
         file <- readLedger addedByThisUser
         j' <- myJournalAddTransaction file [newt]
         infoNewTx =<< user
         -- clear the matching transactions second posting in the file
         clear j'
-      clear j = if clearIt && isJust match then
-                  saveChanges $ changeTransaction $ clearMatch $ fromJust match
-                else return j
+      clear j =  maybe (return j)
+        (saveChanges . changeTransaction .
+          (:[]) . clearSecondPosting) $ guard clearIt *> match
       savePartners (partner, tx) = do
         myJournalAddTransaction (partnerLedger partner) [tx]
         infoNewTx $ pUser partner
@@ -202,28 +202,10 @@ saveAndClear match clearIt (userT, partnerTS)  = do
   put j'
 
 
--- | maybe this is not enough (see comments below)
-clearMatch t = [Just (t, clearNthPosting 1 t)]
-  -- compare comment, because e..g amounts can have different formats,
-  -- because on is read from clearF and the other from via import in
-  -- main ledger
-              
-  -- alternative: also import matches from clearF. or use a database
-  -- with IDs :-)
+clearSecondPosting :: Transaction -> (Transaction, Transaction)
+clearSecondPosting t = (t, clearNthPosting 1 t)
 
-  -- TODO ^ 
-             
--- | clears the second posting of a given transaction in a journal
-clearSecondPosting :: Maybe Transaction -> Journal
-                      -> (Journal,Integer)
-                      -- ^ return number of changes and new journal
-clearSecondPosting Nothing  = flip (,) 0
-clearSecondPosting (Just t1) = countUpdates (jTrans . traverse) clear
-  where clear t2 | t1 == t2 = Just $ clearNthPosting 1 t2
-                 | True     = Nothing
-        
 
-  
 infoNewTx = liftIO . L.putStr .
   sformat ("\nNew transaction created for '" %F.sh% "'\n") . name
 
@@ -264,7 +246,7 @@ finishTransaction check (Just (tr,postings)) = do
     partnerT (partner, ps, sum) = (,) partner $
       toTP $ nullP (userAccount partner) (negate sum)
       ++ E.toList ps
-    
+
     toTP ps = (if check then either err id . balanceTransaction Nothing
               else id)
               tr {tpostings = increasePrec <$> ps ,tcomment = comment}
@@ -279,11 +261,11 @@ finishTransaction check (Just (tr,postings)) = do
     increasePrec p = p{pamount = setMixedAmountPrecision maxprecisionwithpoint
                         $ pamount p}
   return $ (userT, partnerT <$> partnerPS)
-        
+
 iso8601 :: UTCTime -> String
 iso8601 = formatTime defaultTimeLocale "%FT%TZ"
-        
--- | add transaction to ledger file    
+
+-- | add transaction to ledger file
 myJournalAddTransaction :: FilePath -> [Transaction] -> AddT IO Journal
 myJournalAddTransaction relative trans = do
   file <- absolute relative
@@ -295,12 +277,12 @@ myJournalAddTransaction relative trans = do
   where trans' = L.dropWhileEnd (=='\n') . fshow <$> trans :: [T.Text]
 
 
-              
+
 clearNthPosting :: Int -> Transaction -> Transaction
 clearNthPosting n t = t{tpostings=p'}
   where p' = modifyNth (\x -> x{pstatus=Cleared}) n $ tpostings t
 
-                              
+
 -- * Transaction suggestions
 
 -- | Find a transactions matching the entered amount
@@ -309,18 +291,18 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
   do
     r@(_, iAm) <- second negate <$> askAmount (Just $ mixed' nullamt)
       "Enter amount (zero for any transaction)" Nothing
-    
+
     accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
     user <- readUser id
     let
-      f user accs t@Transaction{tpostings=p1:(p2:_)} =
+      f user t@Transaction{tpostings=p1:(p2:_)} =
         -- the first posting's account is part of the accounts
         -- automaticcaly handled by csv2ledger
         (paccount p1 `S.member` accs)
         -- the first amount of the first posting matched the entered
         -- amount in absolute values
         && (on (==) (abs.aquantity.head.amounts) iAm ( pamount p1 )
-            -- or the amount is zero    
+            -- or the entered amount is zero
             || mixed' nullamt == iAm
             -- or the amount occurs in the comment of the second
             || (comma.fshow.abs.aquantity.head.amounts $ iAm)
@@ -333,10 +315,10 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
         -- paid)
         -- && fromMaybe True ( flip Set.notMember s <$>
         --     toMyP t p2{pamount=negate $ pamount p2})
-        
+
         -- ignore certain accounts
         && (not $ isIgnored user $ paccount p2)
-      f _ _ _ = False
+      f _ _ = False
         -- s :: S.Set MyPosting
         -- s = error "doch benutzt?" -- Set.fromList $ toMyPs =<< jtxns j
       comma = T.replace "." ","
@@ -347,7 +329,7 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
               g Manual = return (r, Nothing)
               g (Choose i) = return $ (r, Just $ atNote "selectMatch" m' i)
               g Reenter = sugTrans
-    selectMatch =<< gets (filter (f user accs) . jtxns)
+    selectMatch =<< gets (filter (f user) . jtxns)
 
 -- data MyPosting = MyP {mypDay::Day, mypAcc::AccountName,mypAmt::Amount}
 --                  deriving (Show)
@@ -368,9 +350,9 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
 --   (==) =  (EQ==).:compareMyPs
 -- (.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 -- (.:) = (.) . (.)
-         
+
 data Choice = Reenter | Manual | Choose Int
-  
+
 -- | user input: choose one from a list of choices
 choose :: [String] -- ^ choices
        -> IO Choice
@@ -383,7 +365,7 @@ choose m = do
     ,"'m': enter transaction manually"
     ,"'r': enter new amount to find existing transations"]
   either ((>> choose m) . print) return
-    =<< parse (menup len)"menu parser" <$> getLine 
+    =<< parse (menup len)"menu parser" <$> getLine
   where pr n t = show n ++ ")\n" ++ t
         len = length m
 
@@ -397,8 +379,8 @@ menup limit = stripP $
 
 stripP p = do r <- spaces >> p
               spaces >> eof >> return r
-  
-                             
+
+
 -- * Main editing loop
 
 -- | combines everything into an 'EditorConf'
@@ -467,7 +449,7 @@ clearTrans = differentiate . fmap f . integrate'
 nextNotFirst :: EditablePosting -> EditablePosting
 nextNotFirst s | epNumber s > 0 = next s
                | otherwise = s
-         
+
 -- | Try to balance the transactions and present the final
 -- transactions
 checkDone :: LState EditablePosting Transaction ->
@@ -495,7 +477,7 @@ askDescription :: Maybe T.Text -- ^ default
                   -> IO T.Text
 askDescription = editLoop Right d Nothing Nothing (Left d)
   where d = "Title" :: IsString a => a
-        
+
 -- | uses 'dateandcodep'
 askDate :: Maybe Day -- ^ default
            -> IO (Day, T.Text)
@@ -552,7 +534,7 @@ askAmount def pr init = do
   where
     extract :: Journal -> T.Text -> Either String (Comment, MixedAmount)
     extract j input = left show $ (,) cmt . mixed' <$> parseAmount j am
-      
+
       where (am, cmt) =  textstrip *** (textstrip . L.dropWhile (==';')) <<< L.break (==';') $ input
               :: (T.Text, T.Text)
     useDef x = Just (("",x), showMixedAmount2 x)
@@ -565,7 +547,7 @@ askAmount def pr init = do
 -- toShow :: Journal -> MixedAmount -> MixedAmount
 -- toShow j (Mixed ams) = Mixed $ fmap g ams
 --   where g = either (error.show) id . parseAmount j . fshow
-  
+
 parseAmount
   :: Journal
      -> T.Text -> Either (MP.ParseError Char MP.Dec) Amount
@@ -615,7 +597,7 @@ askPercent = editLoop extr "percent"
 
 -- * Posting and Suggestions
 
-  
+
 -- | Type holding suggested or temporary postings
 data EditablePosting = EditablePosting { epPosting :: Maybe Posting
                              , epFreq    :: Maybe Int
@@ -624,7 +606,7 @@ data EditablePosting = EditablePosting { epPosting :: Maybe Posting
                              , epUser :: Zipper (Either User Partner)
                              -- ^ zipper of possible user
                              }
-                           
+
 type EditablePostings = Zipper EditablePosting
 
 -- | construct an 'EditablePosting'
@@ -635,9 +617,9 @@ editablePosting account amt n = do
     { epAccount = account
     , epFreq=Nothing
     , epNumber=n
-    , epPosting = Nothing 
+    , epPosting = Nothing
     , epUser = differentiate $ E.cycle $ Left user E.:| (Right <$> ps)}
-  
+
 -- | generate and add new 'Posting' to 'EditablePosting'
 addPosting
   :: AccountName
@@ -650,22 +632,22 @@ addPosting account (Just (cmt, iam)) s = s{epPosting=Just nullposting{
 
 removeAmount :: EditablePosting -> EditablePosting
 removeAmount ep = ep{epPosting=Nothing}
-                  
+
 -- | jump to a certain element in a zipper
 jumpTo :: Int -> Zipper a -> Zipper a
-jumpTo n z' = atNote "jumpTo" (iterate fwd . differentiate . integrate' $ z') n 
-  
+jumpTo n z' = atNote "jumpTo" (iterate fwd . differentiate . integrate' $ z') n
+
 editDate :: LState a Transaction -> AddT IO (LState a Transaction)
 editDate s@LS{userSt=t@Transaction{tdate=d}} = liftIO $ do
    iDa <- askDate (Just d)
    return s{userSt=t{tdate=fst iDa,tcode=snd iDa}}
-                                                               
+
 editDescription :: LState a Transaction -> AddT IO (LState a Transaction)
 editDescription s@LS{userSt=t@Transaction{tdescription=d}} = liftIO $ do
    iDe <- askDescription (Just d)
    return s{userSt=t{tdescription=iDe}}
-  
--- | edit the amount of the selected posting  
+
+-- | edit the amount of the selected posting
 editCurAmount :: EditablePostings -> AddT IO EditablePostings
 editCurAmount = modifyCurAmount (const id) True
 
@@ -680,8 +662,8 @@ modifyCurAmount new showO z@LZ{past=(s@EditablePosting{epAccount=ac} E.:| ps)} =
   return $ moveToNextEmpty z{ past = addPosting ac (Just $ maybe id (second . new) olda iAm) s E.:| ps }
     where olda = pamount <$> epPosting s
           solda = if showO then showMixedAmount2 <$> olda else Nothing
-          
-  
+
+
 -- | Hardcoded default number of suggested accounts
 defNumSuggestedAccounts :: Int
 defNumSuggestedAccounts = 20
@@ -690,7 +672,7 @@ defNumSuggestedAccounts = 20
 -- | retrieve a number of suggested contra postings for a given
 -- account, sort frequency of that contra account for the given
 -- account.
--- 
+--
 -- duplicate each posting for both users, but only if the
 -- other user's account is present in the suggestions.
 suggestedPostings :: MonadIO m
@@ -700,9 +682,9 @@ suggestedPostings :: MonadIO m
 suggestedPostings account am = do
   j <- get
   filterPref <- maybe id (\x -> filter $ not . L.isPrefixOf (x <> ":") . epAccount)
-                <$> readUser accountPrefixOthers 
+                <$> readUser accountPrefixOthers
   nP <- succ . length <$> partners
-  let 
+  let
     toEp l = editablePosting (head l) Nothing 0
       >>= \x -> return $ x{epFreq=Just $ length l}
     matches = concatMap tail $ filter filt $
@@ -718,7 +700,7 @@ suggestedPostings account am = do
   firstP <- editablePosting account am 0 -- ReferenceA
   num <- fromMaybe defNumSuggestedAccounts <$>
     readUser numSuggestedAccounts
-  return $ (E.:|) firstP $ take (pred num) $ 
+  return $ (E.:|) firstP $ take (pred num) $
     zipWith (\n p -> p{epNumber=n}) [1..] transformed
   where
     filt x = account == head x && not ( null x )
@@ -731,8 +713,8 @@ roundP :: EditablePosting -> EditablePosting
 roundP p = p{epPosting = r1 <$> epPosting p}
   where r1 p = p{pamount = normalizeMixedAmountWith g $ pamount p}
         g a = roundTo (fromIntegral $ asprecision $ astyle a) $ aquantity a
-        
-                              
+
+
 -- | assign the 'Transaction''s open balance to an empty 'EditablePosting'
 assignOpenBalance :: Decimal -> EditablePostings -> EditablePostings
 assignOpenBalance c old@LZ{past=(pr@EditablePosting{epAccount=sac} E.:| ps)} =
@@ -761,11 +743,11 @@ showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
 
 totalBalance :: [EditablePosting] -> MixedAmount
 totalBalance = negate . sum . fmap pamount . mapMaybe epPosting
-                                  
+
 showMixedAmount2 :: MixedAmount -> T.Text
 showMixedAmount2 = T.pack . showMixedAmountWithPrecision maxprecisionwithpoint
--- showMixedAmount2 = T.pack . showMixedAmountDebug 
-  
+-- showMixedAmount2 = T.pack . showMixedAmountDebug
+
 -- | ask for new account (display old as default) and use existing
 -- posting, if same account without a posting/amount already exists or
 -- append.
@@ -788,13 +770,13 @@ addNewPosting forNext old' = do
       loop [] done = LZ (new E.:| done) []
   return $ modifyPresent (\x -> x{epUser = nextP}) $ loop postings []
 
-  
--- | move the focus to the next empty posting  
+
+-- | move the focus to the next empty posting
 moveToNextEmpty :: EditablePostings -> EditablePostings
 moveToNextEmpty z = fromMaybe z $ find f zs
   where zs =  take (length postings) $ iterate wrapFwd z
         postings = integrate' z
-        f = isNothing . epPosting . E.head . past 
+        f = isNothing . epPosting . E.head . past
         wrapFwd x = if null $ future x then differentiate postings
                     else fwd x
 

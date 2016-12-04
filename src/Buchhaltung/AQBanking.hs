@@ -25,35 +25,34 @@ import           System.IO
 import           System.IO.Temp
 import           System.Process as P
 import           Text.Printf
-  
+
 type AQM = CommonM (AQConnection, AQBankingConf)
-  
+
 askExec
   :: (AQBankingConf -> Maybe FilePath)
   -> FilePath -- ^ default
   -> String -- ^ config path argument
-  -> AQM (FilePath, [String])
+  -> AQM ([FilePath], FilePath)
   -- ^ Path and Args
 askExec get def arg = do
   path <- askConfigPath
-  fmap (flip (,) [arg, path]) $ readConf
-    $ return . fromMaybe def . get 
+  readConf $ return . ((,) [arg, path]) . fromMaybe def . get
 
 runProc ::
   (FilePath -> [String] -> IO a)
-  -> [String] -> (FilePath, [String]) 
+  -> [String] -> ([FilePath], FilePath)
   -> AQM a
-runProc run args (bin, argsC) = liftIO $ run bin $ argsC ++ args
+runProc run args (argsC, bin) = liftIO $ run bin $ argsC ++ args
 
 runAqhbci :: [String] -> AQM ()
 runAqhbci args = runProc callProcess args
             =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-C"
-  
+
 runAqbanking prc args = runProc prc args
                =<< askExec aqBankingExecutable "aqbanking-cli" "-D"
 
 readPr x y = readProcess x y ""
-  
+
 aqbankingListtrans :: Bool
                       -- ^ request new transactions
                    -> AQM T.Text
@@ -71,7 +70,7 @@ aqbankingListtrans doRequest = do
                                  , "-c", path
                                  ]
 
--- | Runs an AQBanking Action for all connections of the selected user  
+-- | Runs an AQBanking Action for all connections of the selected user
 runAQ :: FullOptions () -> AQM a -> ErrorT IO [a]
 runAQ options action = fst <$> evalRWST action2 options ()
   where action2 = do
@@ -80,7 +79,7 @@ runAQ options action = fst <$> evalRWST action2 options ()
                     ($ user) return $ aqBanking user
           forM (connections aqconf) $ \conn ->
             withRWST (\r s -> (r{oEnv = (conn,aqconf)}, s)) action
-            
+
 
 aqbankingSetup :: AQM ()
 aqbankingSetup = do
@@ -105,10 +104,10 @@ aqbankingSetup = do
   runAqhbci [ "getsysid" ]
   runAqhbci [ "getaccounts" ]
   runAqhbci [ "listaccounts" ]
-  
+
 
 askContextPath = (<.> "context") <$> askConfigPath
-        
+
 askConfigPath :: AQM FilePath
 askConfigPath = do
   conn <- readConn return
@@ -118,6 +117,6 @@ askConfigPath = do
 readConn :: (AQConnection -> AQM a) -> AQM a
 readConn f = f =<< reader (fst . oEnv)
 
-  
+
 readConf :: (AQBankingConf -> AQM a) -> AQM a
 readConf f = f =<< reader (snd . oEnv)

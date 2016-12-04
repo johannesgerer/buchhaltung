@@ -25,20 +25,21 @@ import           System.Directory
 import           System.Environment
 import           System.Exit
 import           System.FilePath
+import           System.Process
 import           System.IO
 import qualified Text.PrettyPrint.ANSI.Leijen as D
 import           Text.Printf
 
 -- * Option parsers
-  
+
 mainParser = do
   env <- getEnvironment
   home <- try getHomeDirectory :: IO (Either SomeException FilePath)
   return $ info
     ( helper *> (Options
-                <$> subparser commands
-                <*> userP
+                <$> userP
                 <*> profile env home
+                <*> subparser commands
                 <*> pure ()
                 <*> pure ()
               )
@@ -47,8 +48,8 @@ mainParser = do
 paragraph = foldr ((D.</>) . D.text) mempty . words
 
 userP :: Parser (Maybe Username)
-userP = optional $ fmap (Username . T.pack) $ argument str $
-        metavar "USER"
+userP = optional $ (Username . T.pack) <&> strOption $ long "user"
+        <> short 'u' <> metavar "USER"
         <> helpDoc
         (Just $ paragraph "Select the user. Default: first configured user")
 
@@ -57,7 +58,7 @@ envVar = "BUCHHALTUNG"
 -- | optparse profile folder
 profile
   :: Exception b =>
-     [(String, FilePath)] -> Either b FilePath -> Parser String
+     [(String, FilePath)] -> Either b FilePath -> Parser FilePath
 profile env home = strOption $
   long "profile"
   <> value (fromMaybe (either throw buch home) envBuch)
@@ -74,8 +75,8 @@ profile env home = strOption $
               )
   where buch = (</> ".buchhaltung")
         envBuch = lookup envVar env
-  
--- | optparse command parser  
+
+-- | optparse command parser
 -- commands :: Parser Action
 commands :: Mod CommandFields Action
 commands =
@@ -84,30 +85,46 @@ commands =
     (strOption (short 'w' <> help "with partner USERNAME"
                  <> metavar "USERNAME")))
   (progDesc "manual entry of new transactions")
-  
+
   <> command' "import"
   (Import <$> strArgument (metavar "FILENAME")
     <*> subparser importOpts)
   (progDesc "import transactions from FILENAME")
-  
+
   <> command' "aqbanking"
   (AQBanking <$>
     (switch $ short 'm' <> help "run match after import")
     <*> (fmap not $ switch $ short 'n' <> help "do not fetch new transactions"))
   (progDesc
    "fetch and import AQ Banking transactions (using \"aqbanking request\" and \"listtrans\")")
-  
+
   <> command' "match" (pure Match)
   (progDesc "manual entry of new transactions")
-  
+
   <> command' "setup" (pure Setup)
   (progDesc "initial setup of AQBanking")
-  
+
+  <> ledgerP Ledger "ledger" "l"
+
+  <> ledgerP HLedger "hledger" "hl"
+
+ledgerP
+  :: ([String] -> Action) -> String -> String -> Mod CommandFields Action
+ledgerP constr long short = mconcat $ f <$> [long, short]
+  where f cmdName = command' cmdName
+          (constr <&> many $ strArgument mempty)
+          $ noIntersperse
+          <> (progDesc $ "invoke '" ++ long ++
+              "' on the user's main ledger and pass all remaining args.")
+
+infixr 0 <&>
+(<&>) = (<$>)
+
 command' str parser infomod =
   command str $ info (helper *> parser) infomod
 
 importOpts :: Mod CommandFields ImportAction
-importOpts = 
+importOpts =
   command' "paypal"
   (Paypal . T.pack <$> strArgument
     (help "paypal username (as configured in 'bankAccounts')"
@@ -121,9 +138,9 @@ importOpts =
 -- * Running Option Parsers and Actions
 
 run :: Action -> FullOptions () -> ErrorT IO ()
-run (Add partner) options =
+run (Add partners) options =
   void $ withJournals [imported, addedByThisUser] options
-  $ runRWST add options{oEnv = partner}
+  $ runRWST add options{oEnv = partners}
 
 run (Import file action) options = runImport action
   where runImport (Paypal puser) =
@@ -139,16 +156,30 @@ run (AQBanking doMatch doRequest) options = do
   when doMatch $ run Match options
 
 run Setup options = void $ runAQ options aqbankingSetup
-  
+
 run Match options =
   withSystemTempDirectory "dbacl" $ \tmpdir -> do
   withJournals [imported] options $ match options{oEnv = tmpdir}
-  
+
+run (Ledger args) options =
+  runLedger args options cLedgerExecutable mainLedger
+
+run (HLedger args) options =
+  runLedger args options cHledgerExecutable
+  $ maybe mainLedger const =<< mainHledger
+
+runLedger args options getExec getLedger = flip runReaderT options $ do
+  exec <- readConfig getExec
+  ledger <- absolute =<< readLedger getLedger
+  liftIO $ do
+    setEnv "LEDGER" ledger
+    callProcess exec args
+
 -- | performs an action taking a journal as argument. this journal is
 -- read from 'imported' and 'addedByThisUser' ledger files
 -- withJournals ::
 --   [Ledgers -> FilePath]
---   ->  FullOptions () 
+--   ->  FullOptions ()
 --   -> (Journal -> ErrorT IO b) -> ErrorT IO b
 withJournals
   :: (MonadError Msg m, MonadIO m) =>
