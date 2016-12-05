@@ -6,34 +6,19 @@ where
 
 import           Buchhaltung.Common
 import           Buchhaltung.Uniques
-import           Control.Applicative
-import           Control.Arrow hiding (loop)
-import           Control.Monad
-import           Control.Monad.IO.Class
 import           Control.Monad.RWS.Strict
-import           Control.Monad.Reader.Class
-import           Data.Default
-import           Data.Either
-import           Data.Function
 import qualified Data.HashMap.Strict as M
 import           Data.List
-import           Data.Maybe
-import           Data.Monoid
 import           Data.Ord
-import           Data.Ratio
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import qualified Data.Text.Lazy as TL
 import           Data.Time.LocalTime
 import           Hledger.Data
 import           Hledger.Read
-import           Safe
 import           System.IO
 import qualified System.IO.Strict as S
 import           Text.ParserCombinators.Parsec
 import           Text.Printf
-import           Text.Regex
-import           Text.Regex.TDFA
 
 assertParseEqual' ::  (Either ParseError a) -> String
 assertParseEqual' = const "a"
@@ -77,7 +62,6 @@ importCat journalPath conv text  = do
     (fmap (either error id) . readJournalFile Nothing Nothing False)
     journalPath
   datetime <- liftIO $ fshow <$> getZonedTime
-  let lookupAcc name = fromMaybe
   entries <- mapM (fillTxn datetime) =<< conv text 
   newTxns <- addNew entries oldJ
   liftIO $ hPutStrLn stderr $ printf "found %d new of %d total transactions"

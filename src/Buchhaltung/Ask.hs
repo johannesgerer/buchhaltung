@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Buchhaltung.Ask where
 
-import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad
 import           Control.Monad.Trans.Class

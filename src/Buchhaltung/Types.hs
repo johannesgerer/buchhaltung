@@ -14,7 +14,6 @@ module Buchhaltung.Types
 
 import           Buchhaltung.Utils
 import           Control.Applicative
-import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Monad.Except
 import           Control.Monad.RWS.Strict
@@ -42,9 +41,8 @@ import           GHC.Generics
 import           Hledger.Data
 import           Prelude hiding (lookup)
 import           System.FilePath
-import           Text.Printf
 import qualified Text.Regex.TDFA as R
-import qualified Text.Regex.TDFA.Text as R
+import  Text.Regex.TDFA.Text()
 
 -- * Monad used for most of the funtionality
 
@@ -351,6 +349,7 @@ instance FromJSON BankAccounts where
 parseAccountMap :: FromJSON b => (T.Text, Value) -> Parser [(AccountId, b)]
 parseAccountMap (bank, (Object m)) = traverse f $ HM.toList m
   where f (acc,v) = (,) (AccountId bank acc) <$> parseJSON v
+parseAccountMap (_, invalid)       = A.typeMismatch "parseAccountMap" invalid
 
 -- * AQBanking
 
@@ -416,14 +415,16 @@ type PaypalUsername = T.Text
 data Action = Add { aPartners :: [Username] }
             | Match
             | Import FilePath ImportAction
-            | AQBanking { aqMatch :: Bool
+            | Update { aqMatch :: Bool
                         -- ^ run match after import
                         , aqRequest :: Bool
                         -- ^ request new transactions
                         }
+            | Commit { cArgs :: [String] }
             | Setup
             | Ledger { lArgs :: [String] }
-            | HLedger { lArgs :: [String] }
+            | HLedger { hlArgs :: [String] }
+            | AQBanking { aqArgs :: [String] }
 
   deriving (Show, Generic, NFData)
 

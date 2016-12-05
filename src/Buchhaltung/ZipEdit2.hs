@@ -38,11 +38,9 @@ module Buchhaltung.ZipEdit2
   ) where
 
 import           Buchhaltung.Zipper
-import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.RWS.Strict
 import qualified Data.List.NonEmpty as E
-import           Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           System.Directory (removeFile)

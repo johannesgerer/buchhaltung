@@ -31,13 +31,14 @@ executable buchhaltung
                  Buchhaltung.Importers
                  Buchhaltung.Match
                  Buchhaltung.Commandline
+                 Buchhaltung.OptionParsers
                  Buchhaltung.Types
                  Buchhaltung.Uniques
                  Buchhaltung.Utils
                  Buchhaltung.ZipEdit2
                  Buchhaltung.Zipper
   default-language: Haskell2010
-  ghc-options:     -threaded
+  ghc-options:     -threaded -W
   build-depends:
                       Decimal >= 0.4.2
                 , ListLike

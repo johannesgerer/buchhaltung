@@ -1,24 +1,21 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module Buchhaltung.Utils where
 
 import           Control.Arrow
 import qualified Control.Exception.Lifted as E
 import           Control.Monad
-import qualified Control.Monad.Except as E
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Control
-import           Data.Function
 import qualified Data.ListLike as L
 import           Data.Monoid
 import           Data.String
-import qualified Data.Text as T
-import           Formatting (sformat, (%))
-import qualified Formatting.ShortFormatters as F
 import           System.Directory
 import           System.IO
 import qualified System.IO.Temp as T
+import           System.Process
  
 -- | apply a funtion to the ith element of a list
 modifyNth :: (a -> a) -> Int -> [a] -> [a]
@@ -86,3 +83,12 @@ ignoringIOErrors ioe = ioe `E.catch` (\e -> const (return ()) (e :: IOError))
 mconcat' :: Monoid t => [t] -> t
 mconcat' [] = mempty
 mconcat' x = foldr1 mappend x
+
+
+(<&>) :: Functor f => (a -> b) -> f a -> f b
+(<&>) = (<$>)
+
+infixr 0 <&>
+
+readProcess' :: FilePath -> [String] -> IO String
+readProcess' x y = readProcess x y ""

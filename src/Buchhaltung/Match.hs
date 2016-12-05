@@ -8,43 +8,27 @@ import           Buchhaltung.Ask
 import           Buchhaltung.Common
 import           Buchhaltung.Importers
 import           Buchhaltung.Zipper
-import           Control.Applicative
 import           Control.Arrow
 import           Control.Concurrent.Async
-import           Control.Exception as E (throw)
 import           Control.Lens
 import           Control.Monad.RWS
 import           Control.Monad.Reader
-import           Control.Monad.Writer
-import qualified Data.ByteString as B
 import           Data.Either
 import           Data.Function
-import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.List.NonEmpty as N
-import           Data.List.Split
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
 import qualified Data.Map.Strict as M
 import           Data.Maybe
-import           Data.Monoid
 import           Data.Ord
 import qualified Data.Semigroup as S
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import qualified Data.Text.IO as T
-import qualified Data.Yaml as Y
 import           Hledger.Data hiding (at)
-import           Hledger.Read
 import           System.Console.Haskeline
-import           System.Console.Haskeline.History
-import           System.Directory
-import           System.Environment
 import           System.Exit
 import           System.FilePath
-import           System.IO
-import           System.IO.Error
 import           System.Process
 import qualified Text.PrettyPrint.Boxes as P
 import           Text.Printf
@@ -99,16 +83,16 @@ mainLoop i = do
       next zip
   g account
   where
-    next z@(LZ _ []) = mainLoop "<< DONE! Use 'save' to exit >>\n\n"
+    next (LZ _ []) = mainLoop "<< DONE! Use 'save' to exit >>\n\n"
     next z = modify (second $ const fwd z) >> mainLoop ""
-    prev z@(LZ (_ :| []) _) =
+    prev (LZ (_ :| []) _) =
       mainLoop "<< This is the first transaction >>\n\n"
     prev z = modify (second $ const back z) >> mainLoop ""
 
+histfsuf :: String
 histfsuf =   "learn"
 
 data Default = Default  { display :: T.Text, defAcc :: AccountName }
-
   
 suggestAccount :: Update -> MatchT IO (Maybe Default)
 suggestAccount tx = do
@@ -124,7 +108,7 @@ suggestAccount tx = do
         ExitSuccess -> return Nothing
         ExitFailure x ->
           return $ Just $ Default info sa
-          where sa = accs !! (x-1)
+          where sa = accounts !! (x-1)
                 info :: T.Text
                 info = either fshow (text . lookup sa)
                   (dbacl_parse accs output)
@@ -188,11 +172,13 @@ myAskAccount acc = getAccountList >>= \accs ->
 getAccountList :: Monad m => MatchT m [AccountName]
 getAccountList = gets $ S.toList . fst
 
+tmp :: Monad m => T.Text -> MatchT m FilePath
 tmp name = reader $ (</> T.unpack name) . oEnv 
 
 -- * dbacl arguments
 
 -- | learning
+dbaclProc :: String -> [String]
 dbaclProc x = [  "-g" , oneword
               , "-g" , twowords
               --,"-D" -- interessant "-D" zeigt welche features gefunden wurden  (use grep match)
@@ -211,6 +197,7 @@ dbaclProc x = [  "-g" , oneword
         wrap = id --x = "'"++x++"'"
 
 -- | classification   
+dbaclProcC :: [String] -> [String]
 dbaclProcC cats = let cats' = concat $ sequence [["-c"],cats]
                  in ( cats' ++ [  -- search this file for  'debugging'
                                -- "-v" -- output name of best (dont know when useful)

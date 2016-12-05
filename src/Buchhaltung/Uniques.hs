@@ -5,32 +5,22 @@ module Buchhaltung.Uniques
 where
 
 import           Buchhaltung.Common
-import           Control.Applicative
 import           Control.Arrow hiding (loop)
 import           Control.Monad.RWS.Strict
 import           Control.Monad.Trans.Cont
-import           Data.Either
 import           Data.Function
-import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
 import qualified Data.Map as M
-import           Data.Maybe
-import           Data.Monoid
 import           Data.Ord
-import qualified Data.Set as S
-import           Data.String
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
-import qualified Data.Traversable as T
 import           Formatting as F
 import qualified Formatting.ShortFormatters as F
 import           Hledger.Data
-import           Hledger.Read
-import           System.Environment (getArgs)
 import           System.IO
 import           Text.EditDistance
 import qualified Text.PrettyPrint.Boxes as P
@@ -84,7 +74,7 @@ loop exit totalTx iTx new = do
   checkOrAsk exit new' msg
     $ sortBy (flip $ comparing snd)
     $ (id &&& g) <$> dups
-    where g (k,y) = negate . on
+    where g (_, y) = negate . on
             (restrictedDamerauLevenshteinDistance defaultEditCosts)
             (TL.unpack . json)  (ieSource new)
             <$> (eitherToMaybe $ ieSource y)
@@ -93,7 +83,7 @@ eitherToMaybe :: Either b a -> Maybe a
 eitherToMaybe = either (const Nothing) Just
 
 findDuplicates :: Monad m => (Key, FilledEntry) -> M r m [(Key,Entry)]
-findDuplicates ((ams,acc,day,ix),new) = lift $ gets $ \old ->
+findDuplicates ((ams,acc,day,ix), _) = lift $ gets $ \old ->
    let later = snd $ M.split (ams,acc,day,0) old in
    M.toList $ fst $ M.split (ams,acc,addDays 1 day,ix) later
 
@@ -106,7 +96,7 @@ checkOrAsk :: (MonadIO m, MonadReader (Options user Config env) m)
            -> (Key, FilledEntry)
            -> (Int -> String)
            -> [((Key,Entry), Maybe Int)] -> M r m ()
-checkOrAsk _ new msg []  = do
+checkOrAsk _ new _ []  = do
   modify $ uncurry M.insert $ second fromFilled new
   liftIO $ T.putStrLn "\nSaved new transaction.\n"
 checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
@@ -129,7 +119,7 @@ checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
             , "Skip this and all remaining transactions [Q]"
             , "Your answer:" ]
           hSetBuffering stdin NoBuffering
-          getChar
+          getChar <* putStrLn ""
         answer 'y' = overwriteOldSource
         answer 'n' = checkOrAsk exit new (msg . succ) remaining
         answer 'q' = return ()
@@ -149,7 +139,7 @@ prettyPrint cost new old remain =
           union old = M.mergeWithKey g
             (fmap $ flip (,) "<empty>") (fmap $ (,) "<empty>")
              old $ sourceToMap $ ieSource new
-          g k x y | x == y = Just $ (x, "")
+          g _ x y | x == y = Just $ (x, "")
                   | True   = Just $ (x, y)
           f (k,(old,new)) = T.pack $ P.render
             $ table [20, 25, 25] header [k, old, new]
@@ -176,7 +166,7 @@ prettyPrint cost new old remain =
 applyChanges :: ImportTag -> (Key, FilledEntry)
              -> Key -> Entry -> Entry
 applyChanges tag ((ams2,acc2,day2,_),newEntry)
-  (ams1,acc1,day1,_) oldEntry =
+  (ams1, acc1, _, _) oldEntry =
   if (ams2,acc2) /= (ams1,acc1) then
     error $ unlines ["Change not supported: "
                     , show newEntry

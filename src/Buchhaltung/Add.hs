@@ -15,8 +15,6 @@ import           Buchhaltung.ZipEdit2 as ZE
 import           Buchhaltung.Zipper
 import           Control.Applicative
 import           Control.Arrow
-import           Control.Monad
-import           Control.Monad.Except
 import           Control.Monad.RWS.Strict
 import           Data.Char
 import           Data.Decimal
@@ -26,18 +24,15 @@ import           Data.Function
 import qualified Data.HashMap.Strict as HM
 import           Data.List
 import qualified Data.List.NonEmpty as E
-import           Data.List.Utils (replace)
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
 import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Monoid ((<>))
-import qualified Data.Monoid as Mo
 import           Data.Ord
 import qualified Data.Set as S
 import           Data.String
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Time.Format
@@ -45,13 +40,12 @@ import           Formatting (sformat, (%), (%.))
 import qualified Formatting as F
 import qualified Formatting.ShortFormatters as F
 import           Hledger hiding (at)
-import           Hledger.Cli.CliOptions
 import           Safe
 import qualified Text.Megaparsec as MP hiding (State)
-import qualified Text.Megaparsec.Text as MP hiding (State)
+import qualified Text.Megaparsec.Text as MP
 import           Text.Parsec.Char
-import           Text.Parsec.Combinator (optionMaybe,eof,many1)
-import           Text.Parsec.Prim (runParser,parse,try,runP)
+import           Text.Parsec.Combinator (eof,many1)
+import           Text.Parsec.Prim (parse,try)
 import           Text.Parsec.String
 import           Text.Printf
 import           Text.Read (readEither)
@@ -96,9 +90,6 @@ data Partner = Partner
   }
              deriving (Show, Eq)
 
-data Remote = Remote { account :: AccountName
-                     , ledger :: FilePath}
-
 -- | Extract partner information from the env and throw errors if there are any
 -- readPartner :: (MonadReader AddOptions m, MonadError Msg m)
 --             => (Partner -> a) -> m (Maybe a)
@@ -121,7 +112,6 @@ add = do
 -- | Convert given 'Username' to 'Partner'.
 toPartner :: Monad m => User -> AddT' env m Partner
 toPartner part = do
-  us <- user
   Partner part
     <$> receivablePayable True  part
     <*> receivablePayable False part
@@ -240,7 +230,7 @@ finishTransaction check (Just (tr,postings)) = do
 
     userT = if null x then Nothing else Just $ toTP x
       where x = userP ++ concatMap userTransfer partnerPS
-    userTransfer (partner, ps, sum) =
+    userTransfer (partner, _, sum) =
       nullP (partnerAccount partner) sum
 
     partnerT (partner, ps, sum) = (,) partner $
@@ -295,7 +285,7 @@ sugTrans = --error $ unlines $ show <$> Set.elems s
     accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
     user <- readUser id
     let
-      f user t@Transaction{tpostings=p1:(p2:_)} =
+      f user Transaction{tpostings=p1:(p2:_)} =
         -- the first posting's account is part of the accounts
         -- automaticcaly handled by csv2ledger
         (paccount p1 `S.member` accs)
@@ -422,7 +412,7 @@ myEd =
           [ (intToDigit n, ModifyAll (jumpTo n) ??
                   ("Edit account"++[intToDigit n])) | n <- [0..9] ]
         dis LS{userSt=tr,ctx=z} = do
-          j <- get
+          -- j <- get
           return $ L.replicate 60 '~' <> "\n\n"
             <> fromString (showTransaction tr)
             -- <> fshow (jparsedefaultcommodity j, jcommodities j, jinferredcommodities j)
@@ -555,7 +545,7 @@ parseAmount j = parseWithState' j amountp
 
 -- | (unused) overwrite upstream behavior to use defined or incurred
 -- commodities
-amountp2 = MP.try leftsymbolamountp
+_amountp2 = MP.try leftsymbolamountp
   MP.<|> MP.try rightsymbolamountp
   MP.<|> nosymbolamountp2
 

@@ -23,48 +23,34 @@ import           Control.Applicative ((<$>))
 import           Control.Arrow
 import           Control.Lens hiding (noneOf)
 import           Control.Monad.RWS.Strict
-import           Control.Monad.Reader.Class
 import           Control.Monad.Writer
 import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
-import           Data.Array
-import qualified Data.ByteString as B
 import           Data.Char
 import qualified Data.Csv as CSV
 import           Data.Csv.Parser
 import           Data.Decimal
-import           Data.Either.Utils
 import           Data.Foldable
 import qualified Data.HashMap.Strict as HM
-import           Data.Hashable
 import           Data.List
+import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as E
-import           Data.List.Split
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
-import           Data.Maybe
-import qualified Data.Monoid as Monoid
-import           Data.Monoid hiding (Any)
 import           Data.Ord
-import           Data.String
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as TL
 import           Data.Text.Lazy.Encoding
 import qualified Data.Text.Lazy.Encoding as S
-import qualified Data.Text.Lazy.IO as TL
 import           Data.Time.Calendar
 import           Data.Time.Format
 import           Data.Traversable (traverse)
 import qualified Data.Vector as V
-import           Formatting (format, (%))
-import qualified Formatting.ShortFormatters as F
 import           Hledger.Data hiding (at)
 import           Hledger.Query
 import           Hledger.Read
 import           Hledger.Reports (defreportopts)
 import           Hledger.Reports.EntriesReport (entriesReport)
-import           Hledger.Utils.Text
 import           System.IO
 import           Text.Parsec
 import qualified Text.Parsec.Text as T
@@ -80,7 +66,7 @@ readcsv sep = map (readcsvrow sep) . T.lines
 
 readcsvrow :: Char -> T.Text -> [T.Text]
 readcsvrow sep s = either (error.msg.show) id (parse (p_csvrow sep) "stdin" s)
-  where msg x = printf "CSV (sep %c) Parsing error:\n\n%v\n\n%s" sep s
+  where msg = printf "CSV (sep %c) Parsing error:\n\n%v\n\n%s" sep s
 
 p_csvrow :: Char -> T.Parser [T.Text]
 p_csvrow sep = sepBy1 (p_csvfield sep) (char sep)
@@ -339,9 +325,9 @@ table :: [Int] -- ^ max width
       -> P.Box
 table w h = table1 . table2 w h
   
-table1 :: [[P.Box]] -- ^ list of rows
+table1 :: NonEmpty [P.Box] -- ^ list of rows
        -> P.Box
-table1 (header:rows) = P.punctuateH P.top
+table1 (header :| rows) = P.punctuateH P.top
              (P.vcat P.top $ replicate (ml P.rows cols2) $ P.text " | ")
              cols2
    where h colHead col = P.vcat P.left $ colHead : sep : col
@@ -352,9 +338,9 @@ table1 (header:rows) = P.punctuateH P.top
 table2 :: [Int] -- ^ max width
        -> [T.Text] -- ^ Header
        -> [[T.Text]] -- ^ list of cols
-       -> [[P.Box]] -- ^ list of rows
+       -> NonEmpty [P.Box] -- ^ list of rows
 table2 widths header cols =
-  toRow <$> (header : transpose cols)
+  toRow <$> (header :| transpose cols)
   where 
         toRow = g . zipWith asd widths
         asd w = P.para P.left w . T.unpack

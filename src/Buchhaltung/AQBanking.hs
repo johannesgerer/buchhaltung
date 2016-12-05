@@ -1,74 +1,22 @@
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_HADDOCK ignore-exports #-}
 module Buchhaltung.AQBanking where
 
 import           Buchhaltung.Common
-import           Control.Arrow
-import           Control.DeepSeq
-import           Control.Exception
-import           Control.Monad
-import           Control.Monad.Except
 import           Control.Monad.RWS.Strict
-import           Control.Monad.Reader
 import           Data.Maybe
-import           Data.Monoid
 import qualified Data.Text as T
-import           Formatting (sformat, (%))
+import           Formatting ((%))
 import qualified Formatting.ShortFormatters as F
 import           System.Directory
-import           System.Environment
-import           System.Exit
 import           System.FilePath
-import           System.IO
-import           System.IO.Temp
 import           System.Process as P
-import           Text.Printf
+
+-- * The Monad Stack and its runner
 
 type AQM = CommonM (AQConnection, AQBankingConf)
-
-askExec
-  :: (AQBankingConf -> Maybe FilePath)
-  -> FilePath -- ^ default
-  -> String -- ^ config path argument
-  -> AQM ([FilePath], FilePath)
-  -- ^ Path and Args
-askExec get def arg = do
-  path <- askConfigPath
-  readConf $ return . ((,) [arg, path]) . fromMaybe def . get
-
-runProc ::
-  (FilePath -> [String] -> IO a)
-  -> [String] -> ([FilePath], FilePath)
-  -> AQM a
-runProc run args (argsC, bin) = liftIO $ run bin $ argsC ++ args
-
-runAqhbci :: [String] -> AQM ()
-runAqhbci args = runProc callProcess args
-            =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-C"
-
-runAqbanking prc args = runProc prc args
-               =<< askExec aqBankingExecutable "aqbanking-cli" "-D"
-
-readPr x y = readProcess x y ""
-
-aqbankingListtrans :: Bool
-                      -- ^ request new transactions
-                   -> AQM T.Text
-aqbankingListtrans doRequest = do
-  path <- askContextPath
-  conn <- readConn return
-  when doRequest $
-    runAqbanking callProcess ["request"
-                             , "-c", path
-                             , "--transactions"
-                             , "--ignoreUnsupported"
-                             ]
-
-  T.pack <$> runAqbanking readPr ["listtrans"
-                                 , "-c", path
-                                 ]
 
 -- | Runs an AQBanking Action for all connections of the selected user
 runAQ :: FullOptions () -> AQM a -> ErrorT IO [a]
@@ -80,6 +28,49 @@ runAQ options action = fst <$> evalRWST action2 options ()
           forM (connections aqconf) $ \conn ->
             withRWST (\r s -> (r{oEnv = (conn,aqconf)}, s)) action
 
+-- * Direct access to the executables
+
+runProc ::
+  (FilePath -> [String] -> IO a)
+  -> [String] -> ([FilePath], FilePath)
+  -> AQM a
+runProc run args (argsC, bin) = liftIO $ run bin $ argsC ++ args
+
+callAqhbci :: AAQM ()
+callAqhbci args = runProc callProcess args
+            =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-C"
+
+runAqbanking'
+  :: (FilePath -> [String] -> IO b) -> AAQM b
+runAqbanking' prc args = do
+  args' <- addContext args
+  runProc prc args'
+    =<< askExec aqBankingExecutable "aqbanking-cli" "-D"
+
+
+
+callAqbanking :: AAQM ()
+callAqbanking = runAqbanking' callProcess
+
+readAqbanking :: AAQM String
+readAqbanking = runAqbanking' $ readProcess'
+
+type AAQM a = [String] -> AQM a
+
+-- * Higher Level of Abstraction
+
+aqbankingListtrans :: Bool
+                      -- ^ request new transactions
+                   -> AQM T.Text
+aqbankingListtrans doRequest = do
+  when doRequest $
+    callAqbanking ["request"
+                  , "--transactions"
+                  , "--ignoreUnsupported"
+                  ]
+
+  T.pack <$> readAqbanking ["listtrans"
+                           ]
 
 aqbankingSetup :: AQM ()
 aqbankingSetup = do
@@ -95,18 +86,33 @@ aqbankingSetup = do
     ,"AQBanking manual. Use the '-C' to point to the configured "
     ,"'configDir'."]
   liftIO $ createDirectoryIfMissing True path
-  runAqhbci [ "adduser", "-t", "pintan", "--context=1"
+  callAqhbci [ "adduser", "-t", "pintan", "--context=1"
             , "-b", aqBlz conn
             , "-u", aqUser conn
             , "-s", aqUrl conn
             , "-N", aqName conn
             , "--hbciversion=" <> toArg (aqHbciv conn)]
-  runAqhbci [ "getsysid" ]
-  runAqhbci [ "getaccounts" ]
-  runAqhbci [ "listaccounts" ]
+  callAqhbci [ "getsysid" ]
+  callAqhbci [ "getaccounts" ]
+  callAqhbci [ "listaccounts" ]
 
+-- * Utils
 
-askContextPath = (<.> "context") <$> askConfigPath
+addContext :: AAQM [FilePath]
+addContext [] = return []
+addContext args@(cmd:_) = do
+  withC <- withContext cmd
+  fmap (args ++) $
+    if withC then (\x -> ["-c", x <.> "context"]) <$> askConfigPath
+    else return []
+
+withContext "listbal"    = return True
+withContext "listtrans"  = return True
+withContext "request"    = return True
+withContext "listaccs"   = return False
+withContext cmd          = throwFormat
+  ("'withContext' not defined for command '"%F.s%"'.")
+  ($ cmd)
 
 askConfigPath :: AQM FilePath
 askConfigPath = do
@@ -117,6 +123,16 @@ askConfigPath = do
 readConn :: (AQConnection -> AQM a) -> AQM a
 readConn f = f =<< reader (fst . oEnv)
 
-
 readConf :: (AQBankingConf -> AQM a) -> AQM a
 readConf f = f =<< reader (snd . oEnv)
+
+-- | Find out executable path and two args selecting the config file
+askExec
+  :: (AQBankingConf -> Maybe FilePath)
+  -> FilePath -- ^ default
+  -> String -- ^ config path argument
+  -> AQM ([FilePath], FilePath)
+  -- ^ Path and Args
+askExec get def arg = do
+  path <- askConfigPath
+  readConf $ return . ((,) [arg, path]) . fromMaybe def . get

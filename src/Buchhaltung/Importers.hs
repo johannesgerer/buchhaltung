@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Buchhaltung.Importers
 (
@@ -11,37 +12,20 @@ where
 
 import           Buchhaltung.Common
 import           Buchhaltung.Import
-import           Control.Applicative
-import           Control.Arrow
-import           Control.Monad
 import           Control.Monad.RWS.Strict
-import           Data.Aeson
-import           Data.Array
-import qualified Data.ByteString.Lazy as B
-import qualified Data.Csv as CSV
-import           Data.Csv.Parser
-import           Data.Function
 import           Data.Functor.Identity
 import qualified Data.HashMap.Strict as HM
 import           Data.List
-import           Data.List.Utils hiding (join)
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
 import qualified Data.Map.Strict as M
 import           Data.Maybe
-import           Data.Monoid
 import           Data.Ord
 import           Data.String
-import           Data.String.Utils (replace)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.IO as TL
 import           Data.Time.Calendar
-import           Data.Time.Format
-import qualified Data.Vector as V
-import           Hledger.Data
-import           System.IO
 import           Text.Parsec
 import qualified Text.ParserCombinators.Parsec as C
 
@@ -49,7 +33,7 @@ import qualified Text.ParserCombinators.Parsec as C
 
 -- | retrieval function
 type Getter a = MyRecord -> a
-  
+
 data CsvImport = CsvImport
   { cFilter :: MyRecord -> Bool
   -- ^ should this csv line be processed?
@@ -66,7 +50,7 @@ data CsvImport = CsvImport
   -- ^ expected header
   , cSeparator :: Char
   }
-  
+
 csvImport
   :: MonadError Msg m
   => CsvImport
@@ -100,16 +84,16 @@ csvImport g csv = maybe result check $ cHeader g
 
 aqbankingImporter :: Importer env
 aqbankingImporter = Importer Nothing $ csvImport aqbankingImport
-  
+
 aqbankingImport :: CsvImport
-aqbankingImport = CsvImport 
+aqbankingImport = CsvImport
         { cFilter  = const True
         , cFormat = "aqBanking"
         , cAmount = getCsvConcat [ "value_currency"
                                  , "value_value"]
         , cDescription = getCsvConcat aqBankingDescrFields
         , cDate = readdate . getCsv "date"
-        , cVDate = Just . readdate . getCsv "valutadate" 
+        , cVDate = Just . readdate . getCsv "valutadate"
         , cBank = getCsv "localBankCode"
         , cAccount = getCsv "localAccountNumber"
         , cHeader = Just $ aqbankingHeader 4
@@ -120,19 +104,23 @@ aqBankingDescrFields = concatMap (\(f,i) -> (f <>) <$> "":i)
                        [ ("remoteName", ["1"])
                        , ("purpose",  fshow <$> [1..11])
                        , ("category", fshow <$> [1..7])]
-                       
+
 aqBankingBayes = (cFormat aqbankingImport,
                 ["remoteBankCode","remoteAccountNumber"]
                 ++ aqBankingDescrFields)
 
 
-  
+
 aqbankingHeader :: IsString t => Int -- ^ version
                 -> [t]
 aqbankingHeader 4 = ["transactionId","localBankCode","localAccountNumber","remoteBankCode","remoteAccountNumber","date","valutadate","value_value","value_currency","localName","remoteName","remoteName1","purpose","purpose1","purpose2","purpose3","purpose4","purpose5","purpose6","purpose7","purpose8","purpose9","purpose10","purpose11","category","category1","category2","category3","category4","category5","category6","category7"]
+aqbankingHeader v = versionError "aqbankingHeader" v
+
+versionError :: String -> Int -> a
+versionError h v =  error $ h ++ ": version " ++ show v ++ " not implemented"
 
 -- * Postbank Germany Kontoauszüge (from PDF with @pdftotext@)
-  
+
 -- fromPostbankPDF2 :: T.Text -> [ImportedEntry]
 -- fromPostbankPDF2 xx = fmap (f . mconcat) $ groupBy y $ readcsvrow ',' <$> L.lines xx
 --   where y a b = head b==""
@@ -170,7 +158,7 @@ comdirectToAqbanking = toAqbanking2 ';' T.getContents comdirect_header comdirect
 
 comdirect_header :: [[Char]]
 comdirect_header = ["Buchungstag","Wertstellung (Valuta)","Vorgang","Buchungstext","Umsatz in EUR"]
-  
+
 comdirect_header_visa :: [[Char]]
 comdirect_header_visa = ["Buchungstag","Umsatztag","Vorgang","Referenz","Buchungstext","Umsatz in EUR"]
 
@@ -190,7 +178,7 @@ comdirect_mapping_visa = [
   ( "Vorgang",id),
   ( "Referenz",id)] ++ empty (32-14)
     where empty x = take x $ repeat ( "Referenz" , const "")
-    
+
 comdirect_mapping :: [([Char], T.Text -> T.Text)]
 comdirect_mapping = [
   ("Buchungstag",const ""),
@@ -205,19 +193,19 @@ comdirect_mapping = [
   ( "Buchungstext", id),
   ( "Vorgang",id)] ++ empty (32-10-2)
     where empty x = take x $ repeat ( "Buchungstag" , const "")
-  
+
 -- comdirectVisaCSVImport :: AccountMap -> T.Text -> [ImportedEntry]
 -- comdirectVisaCSVImport accountMappings =
 --   aqbankingCsvImport accountMappings . toAqbanking2Pure ';'
 --   comdirect_header_visa comdirect_mapping_visa (const True)
 --   . T.replace "\n\"Neu\";" "" . L.unlines . ok
-  
+
 ok :: (IsString b, Eq b, L.StringLike b) => b -> [b]
 ok = L.takeWhile (/= fromString "")
      . L.dropWhile (/= fromString "\"Buchungstag\";\"Umsatztag\";\"Vorgang\";\"Referenz\";\"Buchungstext\";\"Umsatz in EUR\";")
      . L.lines
 
-       
+
 p :: ParsecT [Char] u Identity [Char]
 p = do a <- C.manyTill C.anyChar (C.try $ C.string "\n\"Neu\";")
        return a
@@ -269,10 +257,10 @@ csv_header = undefined
 
 paypalImporter :: Importer T.Text
 paypalImporter = Importer windoof $ \text ->
-  do imp <-reader $ paypalImport . oEnv 
+  do imp <-reader $ paypalImport . oEnv
      csvImport imp text
 
-paypalImport email = CsvImport 
+paypalImport email = CsvImport
         { cFilter  = (/= "Storniert") . getCsv " Status"
         , cFormat = paypal_format
         , cAmount = comma . getCsvConcat [ " Netto"
@@ -288,7 +276,7 @@ paypalImport email = CsvImport
                          ," Zeit"]
         , cDate = parseDatum . getCsv "Datum"
         , cVDate = const Nothing
-        , cBank = const "Paypal" 
+        , cBank = const "Paypal"
         , cAccount = const email
         , cHeader = Just $ paypalHeader 2016
         , cSeparator = ','
@@ -299,7 +287,7 @@ paypalImport email = CsvImport
 
 paypal_format = "paypal"
 
-  
+
 paypal_bayes = (paypal_format,
   [" Name"
   ," An E-Mail-Adresse"
@@ -323,10 +311,12 @@ paypal_bayes = (paypal_format,
   ," Telefonnummer der Kontaktperson"
   ])
 
-paypalHeader :: (IsString t, Num a, Eq a) => a -> [t]
+paypalHeader :: IsString t => Int -> [t]
 paypalHeader 2016 = ["Datum"," Zeit"," Zeitzone"," Name"," Art"," Status"," W\228hrung"," Brutto"," Geb\252hr"," Netto"," Von E-Mail-Adresse"," An E-Mail-Adresse"," Transaktionscode"," Status der Gegenpartei"," Adressstatus"," Verwendungszweck"," Artikelnummer"," Betrag f\252r Versandkosten"," Versicherungsbetrag"," Umsatzsteuer"," Option 1 - Name"," Option 1 - Wert"," Option 2 - Name"," Option 2 - Wert"," Auktions-Site"," K\228ufer-ID"," Artikel-URL"," Angebotsende"," Vorgangs-Nr."," Rechnungs-Nr."," Txn-Referenzkennung"," Rechnungsnummer"," Individuelle Nummer"," Best\228tigungsnummer"," Guthaben"," Adresse"," Zus\228tzliche Angaben"," Ort"," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"," PLZ"," Land"," Telefonnummer der Kontaktperson"," "]
-  
+
 paypalHeader 2013 = ["Datum"," Zeit"," Zeitzone"," Name"," Art"," Status"," W\228hrung"," Brutto"," Geb\252hr"," Netto"," Von E-Mail-Adresse"," An E-Mail-Adresse"," Transaktionscode"," Status der Gegenpartei"," Adressstatus"," Verwendungszweck"," Artikelnummer"," Betrag f\252r Versandkosten"," Versicherungsbetrag"," Umsatzsteuer"," Option 1 - Name"," Option 1 - Wert"," Option 2 - Name"," Option 2 - Wert"," Auktions-Site"," K\228ufer-ID"," Artikel-URL"," Angebotsende"," Vorgangs-Nr."," Rechnungs-Nr."," Txn-Referenzkennung"," Rechnungsnummer"," Individuelle Nummer"," Menge"," Best\228tigungsnummer"," Guthaben"," Adresse"," Zus\228tzliche Angaben"," Ort"," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"," PLZ"," Land"," Telefonnummer der Kontaktperson"," "]
+
+paypalHeader v = versionError "Paypal" v
 
 -- * other stuff
 
@@ -365,7 +355,7 @@ toAqbanking
      -> IO ()
 toAqbanking sep f header mapping transf filt =
   T.putStr =<< toAqbankingPure sep header mapping transf filt <$> f
-       
+
 toAqbanking2Pure
   :: (Show a, Eq a) =>
      Char
@@ -386,13 +376,13 @@ hibicus_header =["Kontonummer","BLZ","Konto","Gegenkonto","Gegenkonto BLZ","Gege
 
 hibiscus_mapping :: [[Char]]
 hibiscus_mapping = ["Primanota","BLZ","Kontonummer","Gegenkonto BLZ","Gegenkonto","Datum","Valuta","Betrag"        , "Betrag"  , "Betrag"              , "Gegenkonto Inhaber", "Betrag", "Verwendungszweck","Verwendungszweck 2","Kommentar","Weitere Verwendungszwecke"] ++ (take 16 $ repeat "Betrag")
-  
+
 hibiscus_transf :: [T.Text -> T.Text]
 hibiscus_transf  = [id,         id  , id          , id             , id         , fshow . readdate2, fshow . readdate2,comma ,const "EUR", const "Johannes Gerer", id                  , const ""] <> (take 4 $ repeat id) <> (take 16 $ repeat $ const "") :: [T.Text -> T.Text]
 
 comma :: T.Text -> T.Text
 comma  = T.replace "," "." . T.replace "." "" :: T.Text -> T.Text
-    
+
 readdate2 :: Stream t Data.Functor.Identity.Identity Char
           => t -> Date2
 readdate2 s = either (error.show) id (parse p_date2 "date" s)
@@ -417,7 +407,7 @@ p_date = do y <- many1 digit
             char '/'
             d <- many1 digit
             return $ fromGregorian (read y) (read m) (read d)
-         
+
 instance Show Date2 where
   show (D y m d) = concat [y, "/", m, "/", d]
 
@@ -436,5 +426,3 @@ askBayesFields source = do
   fields <- lookupErrM "Format has to be configured" HM.lookup
             (sFormat source) $ HM.union formats defaultFormats
   return $ mapMaybe (flip M.lookup $ sStore source) fields
-  
-  
