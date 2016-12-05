@@ -421,6 +421,7 @@ data Action = Add { aPartners :: [Username] }
                         -- ^ request new transactions
                         }
             | Commit { cArgs :: [String] }
+            | ListBalances
             | Setup
             | Ledger { lArgs :: [String] }
             | HLedger { hlArgs :: [String] }

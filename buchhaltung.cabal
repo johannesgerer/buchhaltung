@@ -38,7 +38,7 @@ executable buchhaltung
                  Buchhaltung.ZipEdit2
                  Buchhaltung.Zipper
   default-language: Haskell2010
-  ghc-options:     -threaded -W
+  ghc-options:     -threaded
   build-depends:
                       Decimal >= 0.4.2
                 , ListLike

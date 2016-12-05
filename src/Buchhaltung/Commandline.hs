@@ -63,7 +63,8 @@ run (Commit args) options = flip runReaderT options $ do
     callProcess "git" $ "commit":args ++
       ["-m", intercalateL "\n" $ bal ++ ["Balance Sheet:", sheet]]
 
-
+run ListBalances options = void $ runAQ options $ callAqbanking ["listbal"]
+  
 run Setup options = void $ runAQ options aqbankingSetup
 
 run Match options =

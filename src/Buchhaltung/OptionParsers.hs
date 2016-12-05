@@ -99,6 +99,9 @@ commands =
   <> command' "match" (pure Match)
   (progDesc "manual entry of new transactions")
 
+  <> command' "lb" (pure ListBalances)
+  (progDesc "list balances of all AQBanking accounts (only available after 'update')")
+
   <> command' "setup" (pure Setup)
   (progDesc "initial setup of AQBanking")
 
