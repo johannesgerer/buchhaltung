@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -14,8 +16,10 @@ module Buchhaltung.Types
 
 import           Buchhaltung.Utils
 import           Control.Applicative
+import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Monad.Except
+import           Control.Monad.Identity
 import           Control.Monad.RWS.Strict
 import           Control.Monad.Reader
 import qualified Data.Aeson as A
@@ -23,7 +27,9 @@ import qualified Data.Aeson.Text as A
 import qualified Data.Aeson.Types as A
 import           Data.Char
 import           Data.Default
+import           Data.Foldable
 import           Data.Function
+import           Data.Functor
 import qualified Data.HashMap.Strict as HM
 import           Data.Hashable
 import qualified Data.ListLike as L
@@ -34,15 +40,16 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Vector as V
 import           Data.Yaml
-import           Formatting (sformat, (%))
+import           Formatting
 import           Formatting.Internal (Format)
 import qualified Formatting.ShortFormatters as F
 import           GHC.Generics
 import           Hledger.Data
 import           Prelude hiding (lookup)
 import           System.FilePath
+import           Text.Printf
 import qualified Text.Regex.TDFA as R
-import  Text.Regex.TDFA.Text()
+import           Text.Regex.TDFA.Text ()
 
 -- * Monad used for most of the funtionality
 
@@ -50,31 +57,47 @@ type CommonM env = RWST (FullOptions env) () () (ErrorT IO)
 
 -- * The Source of an imported transaction
 
+type Version = T.Text
+
+data SFormat a = SFormat { fName :: T.Text
+                         , fVersion :: a
+                         }
+  deriving (Generic, Show, Eq, Ord, Read, Hashable, Functor)
+
 -- | represents a key value store and a protocol
-data Source = Source { sFormat :: T.Text
+data Source = Source { sFormat :: SFormat Version
                      , sStore :: M.Map T.Text T.Text }
   deriving (Generic, Show, Eq, Ord, Read)
 
 
 -- | Creates a 'Source' from non null values of a HashMap (e.g. from
 -- 'MyRecord')
-fromMapToSource :: T.Text -> HM.HashMap T.Text T.Text -> Source
+fromMapToSource :: SFormat Version -> HM.HashMap T.Text T.Text -> Source
 fromMapToSource format = Source format . M.fromList .
                          filter (not . L.null . snd) . HM.toList
 
--- | produces a map that includes 'sFormat' under the key @"format"@
+-- | produces a map that includes 'sFormat' under the keys @"formatName"@
+-- and @"formatVersion"@
 sourceToMap :: Source -> M.Map T.Text T.Text
-sourceToMap s = M.insertWith (\x y -> x <> ", " <> y) "format"
-                (sFormat s) $ sStore s
+sourceToMap s = M.unionWith (\x y -> x <> ", " <> y)
+                (sStore s)
+                $ M.fromList $ formatToAssoc $ sFormat s
+
+formatToAssoc f = [("name", fName f)
+                  ,("version", fVersion f)]
 
 json :: Source -> TL.Text
 json = A.encodeToLazyText
 
 instance FromJSON Source where
-  parseJSON = A.genericParseJSON $ stripPrefixOptions 1
+  parseJSON (Object v) = do
+    Source <$>
+      (SFormat <$> v .: "name" <*>  v .: "version")
+      <*> v.: "store"
 
 instance ToJSON Source where
-  toEncoding = A.genericToEncoding $ stripPrefixOptions 1
+  toJSON s =  Object $ HM.insert "store" (toJSON $ sStore s) $ toJSON
+    <$> HM.fromList (formatToAssoc $ sFormat s)
 
 stripPrefixOptions n = A.defaultOptions{A.fieldLabelModifier = g}
   where g = drop n . fmap toLower
@@ -124,6 +147,13 @@ lookupErrM description lookup k container =
   maybeThrow ("lookupErr: " %F.sh% " not found: " %F.s)
   (\f -> f k description) return
   $ lookup k container
+
+
+fromListUnique :: (MonadError Msg m, Show k, Ord k)
+               => [(k, a)] -> m (M.Map k a)
+fromListUnique = sequence . M.fromListWithKey
+                 (\k a b -> throwFormat ("Duplicate key '"%shown%"' in M.fromList") ($ k))
+                 . fmap (second pure)
 
 -- * Options
 
@@ -181,12 +211,12 @@ data Config = Config
   , cImportTag :: ImportTag
   , cTodoAccount :: AccountName
   -- ^ account for unmatched imported transactions
-  , cFormats :: HM.HashMap T.Text [T.Text]
-  -- ^ for every format a list of columns used in the bayesian
-  -- classifier used in match
   , cDbaclExecutable :: FilePath
   , cLedgerExecutable :: FilePath
   , cHledgerExecutable :: FilePath
+  -- , cFormats :: HM.HashMap T.Text [T.Text]
+  -- -- ^ for every format a list of columns used in the bayesian
+  -- -- classifier used in match
   }
   deriving ( Generic, Show )
 
@@ -201,7 +231,7 @@ instance FromJSON Config where
   parseJSON (Object v) = do
     -- ^ Users are configured as list, to have a defined order
     users <- parseJSON =<< v .: "users" :: A.Parser (V.Vector User)
-    formats <- v .:? "formats" .!= mempty
+    -- formats <- v .:? "formats" .!= mempty
     dbEx <- v .:? "dbaclExecutable" .!= "dbacl" :: Parser FilePath
     [lEx, hlEx] <- forM ["", "h"] $ \pfx ->
       v .:? (T.pack pfx <> "ledgerExecutable") .!= (pfx <> "ledger")
@@ -211,7 +241,7 @@ instance FromJSON Config where
       , cUserList = name <$> users
       , cImportTag = def
       , cTodoAccount = "TODO"
-      , cFormats = formats
+      -- , cFormats = formats
       , cDbaclExecutable = dbEx
       , cLedgerExecutable = lEx
       , cHledgerExecutable = hlEx
@@ -414,8 +444,11 @@ type PaypalUsername = T.Text
 
 data Action = Add { aPartners :: [Username] }
             | Match
-            | Import FilePath ImportAction
-            | Update { aqMatch :: Bool
+            | Import { iVersion :: Maybe Version
+                     , iPath :: FilePath
+                     , iAction :: ImportAction }
+            | Update { aqVersion :: Maybe Version
+                     , aqMatch :: Bool
                         -- ^ run match after import
                         , aqRequest :: Bool
                         -- ^ request new transactions
@@ -432,6 +465,7 @@ data Action = Add { aPartners :: [Username] }
 
 data ImportAction = Paypal PaypalUsername
                   | AQBankingImport
+                  | ComdirectVisa { comdirectVisaBlz :: T.Text }
   deriving (Show, Generic, NFData)
 
 

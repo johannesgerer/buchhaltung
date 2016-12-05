@@ -1,17 +1,22 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# OPTIONS_HADDOCK ignore-exports #-}
 module Buchhaltung.Importers
 (
   paypalImporter
   , aqbankingImporter
+  , comdirectVisaImporter 
   , module Buchhaltung.Import
-  , askBayesFields
+  , getBayesFields
   )
 where
 
 import           Buchhaltung.Common
 import           Buchhaltung.Import
+import           Control.Arrow
 import           Control.Monad.RWS.Strict
 import           Data.Functor.Identity
 import qualified Data.HashMap.Strict as HM
@@ -26,57 +31,63 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
+import           Formatting (sformat, (%), shown)
+import qualified Formatting.ShortFormatters as F
 import           Text.Parsec
 import qualified Text.ParserCombinators.Parsec as C
+import           Text.Printf
 
 -- * CSV
 
--- | retrieval function
-type Getter a = MyRecord -> a
 
-data CsvImport = CsvImport
-  { cFilter :: MyRecord -> Bool
-  -- ^ should this csv line be processed?
-  , cFormat :: T.Text
-  -- ^ Source Format 'sFormat'
-  , cAmount :: Getter T.Text
-  -- ^ Amount parsable by 'mamoumtp\''
-  , cDescription :: Getter T.Text
-  , cDate :: Getter Day
-  , cVDate :: Getter (Maybe Day)
-  , cBank :: Getter T.Text
-  , cAccount :: Getter T.Text
-  , cHeader :: Maybe [T.Text]
-  -- ^ expected header
-  , cSeparator :: Char
-  }
+-- findVersion
+--   :: (MonadError Msg m, Show k, Ord k) => Maybe k -> M.Map k b -> m b
+headerInfo
+  :: MonadError Msg m =>
+     VersionedCSV a -> Maybe Version -> m (SFormat Version, CsvImport a)
+headerInfo g v = do
+  (format, map) <- g
+  let convert rh = (cVersion rh <$ format, rh)
+  convert . cRaw <&> lookupErrM
+    (printf "Version is not defined for format '%s%'" $ fName format)
+    M.lookup (fromMaybe (fromDefaultVersion $ fVersion format) v) map
 
+-- csvImport
+--   :: MonadError Msg m
+--   => CsvImport
+--   -> T.Text -> m [ImportedEntry]
 csvImport
-  :: MonadError Msg m
-  => CsvImport
-  -> T.Text -> m [ImportedEntry]
-csvImport g csv = maybe result check $ cHeader g
-  where f x = ImportedEntry
+  :: (MonadError Msg m
+     ,MonadReader (Options user config (a, Maybe Version)) m)
+  => VersionedCSV a -> T.Text -> m [ImportedEntry]
+csvImport versionedCsv csv = do
+  (env, version) <- reader oEnv
+  (form, g@CSV{cHeader=expected,
+     cDescription = desc,
+     cVersion = version }) <- headerInfo versionedCsv version
+  let toEntry x = ImportedEntry
           { ieT = genTrans date (vdate =<< cVDate g x)
-                  (cDescription g x)
-          , ieSource  = fromMapToSource (cFormat g) x
-          , iePostings = (AccountId (cBank g x) (cAccount g x)
+                  (getCsvConcat desc x)
+          , ieSource  = fromMapToSource form x
+          , iePostings = (AccountId (cBank g env $ x) (cAccount g env $ x)
                          , cAmount g x)
           }
           where
             vdate vd = if date == vd then Nothing
                        else Just vd
             date  = cDate g x
-        (header, rows) = parseCsv (cSeparator g) . TL.fromStrict $ csv
-        result = return $ fmap f $ filter (cFilter g) rows
-        check h | h == header = result
-                | True
-          = throwError $ L.unlines
-                  ["Headers do not match. Expected:"
-                  ,fshow h
+      (header, rows) = parseCsv (cSeparator g) . TL.fromStrict $ csv
+  if expected == header then
+    return $ fmap toEntry $ filter (cFilter g) rows
+    else throwError $ L.unlines
+                  [sformat ("Headers do not match. Expected by format '"%
+                            F.st%"' version '"%F.st%"':")
+                   (fName form) version
+                  ,fshow expected
                   ,"Given:"
                   ,fshow header
                   ]
+
 
 -- * AQBanking
 --
@@ -85,40 +96,59 @@ csvImport g csv = maybe result check $ cHeader g
 aqbankingImporter :: Importer env
 aqbankingImporter = Importer Nothing $ csvImport aqbankingImport
 
-aqbankingImport :: CsvImport
-aqbankingImport = CsvImport
-        { cFilter  = const True
-        , cFormat = "aqBanking"
-        , cAmount = getCsvConcat [ "value_currency"
-                                 , "value_value"]
-        , cDescription = getCsvConcat aqBankingDescrFields
-        , cDate = readdate . getCsv "date"
-        , cVDate = Just . readdate . getCsv "valutadate"
-        , cBank = getCsv "localBankCode"
-        , cAccount = getCsv "localAccountNumber"
-        , cHeader = Just $ aqbankingHeader 4
-        , cSeparator = ';'
-        }
-
-aqBankingDescrFields = concatMap (\(f,i) -> (f <>) <$> "":i)
-                       [ ("remoteName", ["1"])
-                       , ("purpose",  fshow <$> [1..11])
-                       , ("category", fshow <$> [1..7])]
-
-aqBankingBayes = (cFormat aqbankingImport,
-                ["remoteBankCode","remoteAccountNumber"]
-                ++ aqBankingDescrFields)
-
-
-
-aqbankingHeader :: IsString t => Int -- ^ version
-                -> [t]
-aqbankingHeader 4 = ["transactionId","localBankCode","localAccountNumber","remoteBankCode","remoteAccountNumber","date","valutadate","value_value","value_currency","localName","remoteName","remoteName1","purpose","purpose1","purpose2","purpose3","purpose4","purpose5","purpose6","purpose7","purpose8","purpose9","purpose10","purpose11","category","category1","category2","category3","category4","category5","category6","category7"]
-aqbankingHeader v = versionError "aqbankingHeader" v
-
-versionError :: String -> Int -> a
-versionError h v =  error $ h ++ ": version " ++ show v ++ " not implemented"
-
+aqbankingImport :: VersionedCSV env
+aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
+  [CSV
+    { cFilter  = const True
+    , cAmount = getCsvConcat [ "value_currency"
+                             , "value_value"]
+    , cDate = readdate . getCsv "date"
+    , cVDate = Just . readdate . getCsv "valutadate"
+    , cBank = const $ getCsv "localBankCode"
+    , cAccount = const $ getCsv "localAccountNumber"
+    , cSeparator = ';'
+    , cVersion= "4"
+    , cHeader = ["transactionId"
+                ,"localBankCode"
+                ,"localAccountNumber"
+                ,"remoteBankCode"
+                ,"remoteAccountNumber"
+                ,"date"
+                ,"valutadate"
+                ,"value_value"
+                ,"value_currency"
+                ,"localName"
+                ,"remoteName"
+                ,"remoteName1"
+                ,"purpose"
+                ,"purpose1"
+                ,"purpose2"
+                ,"purpose3"
+                ,"purpose4"
+                ,"purpose5"
+                ,"purpose6"
+                ,"purpose7"
+                ,"purpose8"
+                ,"purpose9"
+                ,"purpose10"
+                ,"purpose11"
+                ,"category"
+                ,"category1"
+                ,"category2"
+                ,"category3"
+                ,"category4"
+                ,"category5"
+                ,"category6"
+                ,"category7"]
+    , cDescription = desc
+    , cBayes = ["remoteBankCode","remoteAccountNumber"]
+               ++ desc
+    }]
+  where desc = concatMap (\(f,i) -> (f <>) <$> "":i)
+               [ ("remoteName", ["1"])
+               , ("purpose",  fshow <$> [1..11])
+               , ("category", fshow <$> [1..7])]
+  
 -- * Postbank Germany Kontoauszüge (from PDF with @pdftotext@)
 
 -- fromPostbankPDF2 :: T.Text -> [ImportedEntry]
@@ -247,6 +277,60 @@ description_list t cols r = map fst $ sorted r
                         -- transformation = map snd mapping'
 csv_header = undefined
 
+-- * Comdirect Visa Statements
+
+comdirectVisaImporter :: Importer T.Text
+comdirectVisaImporter = Importer windoof $ csvImport comdirectVisa
+  
+comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
+  [CSV
+        { cFilter  =(/= "") . getCsv "Buchungstag" 
+        , cAmount = textstrip . comma . (<> " EUR") . getCsv "Ausgang"
+        , cDate = parseDatum . getCsv "Buchungstag"
+        , cVDate = Just . parseDatum . getCsv "Valuta"
+        , cBank = const
+        , cAccount = const $ const "Visa"
+        , cSeparator = ','
+        , cHeader = ["Buchungstag"
+                    ,"Vorgang"
+                    ,"Buchungstext"
+                    ,"Ausgang"
+                    ,"Valuta"
+                    ,"Referenz"
+                    ,"Buchungstext2"
+                    ]
+        , cDescription = desc
+        , cBayes = desc
+        , cVersion = "manuell"
+         -- hand extracted from @pdftotext -layout@
+        }
+  , CSV
+        { cFilter  =(/= "") . getCsv "Buchungstag" 
+        , cAmount = comma . (<> " EUR") . getCsv "Umsatz in EUR"
+        , cDate = parseDatum . getCsv "Buchungstag"
+        , cVDate = Just . parseDatum . getCsv "Umsatztag"
+        , cBank = const
+        , cAccount = const $ const "Visa"
+        , cSeparator = ','
+        , cHeader = ["Buchungstag"
+                    ,"Umsatztag"
+                    ,"Vorgang"
+                    ,"Referenz"
+                    ,"Buchungstext"
+                    ,"Umsatz in EUR"]
+        , cDescription = desc2
+        , cBayes = desc2
+        , cVersion = "export"
+        }
+  ]
+  where desc = ["Vorgang"
+                ,"Buchungstext"
+                ,"Buchungstext2"
+                ]
+        desc2 = ["Vorgang"
+                ,"Buchungstext"
+                ]
+  
 -- * Paypal (German)
 --
 -- understands exports that used the foolowing setting:
@@ -256,67 +340,235 @@ csv_header = undefined
 -- @
 
 paypalImporter :: Importer T.Text
-paypalImporter = Importer windoof $ \text ->
-  do imp <-reader $ paypalImport . oEnv
-     csvImport imp text
+paypalImporter = Importer windoof $ csvImport paypalImport
 
-paypalImport email = CsvImport
+paypalImport :: VersionedCSV T.Text
+paypalImport = 
+  let base = CSV
         { cFilter  = (/= "Storniert") . getCsv " Status"
-        , cFormat = paypal_format
         , cAmount = comma . getCsvConcat [ " Netto"
                                          , " Währung"]
-        , cDescription = getCsvConcat
-                         [" Name"
-                         -- ," An E-Mail-Adresse"
-                         -- ," Von E-Mail-Adresse"
-                         ," Verwendungszweck"
-                         ," Art"
-                         --," Status"
-                         --," Käufer-ID"
-                         ," Zeit"]
         , cDate = parseDatum . getCsv "Datum"
         , cVDate = const Nothing
-        , cBank = const "Paypal"
-        , cAccount = const email
-        , cHeader = Just $ paypalHeader 2016
+        , cBank = const $ const "Paypal"
+        , cAccount = const
         , cSeparator = ','
+        , cVersion = "undefined"
+        , cHeader = []
+        , cBayes = ["undefined"]
+        , cDescription = ["undefined"]
+        } in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2016")
+  [base { cVersion = "2016"
+        , cHeader = ["Datum"
+                    ," Zeit"
+                    ," Zeitzone"
+                    ," Name"
+                    ," Typ"
+                    ," Status"
+                    ," W\228hrung"
+                    ," Brutto"
+                    ," Geb\252hr"
+                    ," Netto"
+                    ," Von E-Mail-Adresse"
+                    ," An E-Mail-Adresse"
+                    ," Transactionscode"
+                    ," Status der Gegenpartei"
+                    ," Adressstatus"
+                    ," Artikelbezeichnung"
+                    ," Artikelnummer"
+                    ," Betrag f\252r Versandkosten"
+                    ," Versicherungsbetrag"
+                    ," Umsatzsteuer"
+                    ," Option 1 - Name"
+                    ," Option 1 - Wert"
+                    ," Option 2 - Name"
+                    ," Option 2 - Wert"
+                    ," Auktions-Site"
+                    ," K\228ufer-ID"
+                    ," Artikel-URL"
+                    ," Angebotsende"
+                    ," Vorgangs-Nr."
+                    ," Rechnungs-Nr."
+                    ," Txn-Referenzkennung"
+                    ," Rechnungsnummer"
+                    ," Individuelle Nummer"
+                    ," Belegnummer"
+                    ," Guthaben"
+                    ," Adresszeile 1"
+                    ," Zus\228tzliche Angaben"
+                    ," Ort"
+                    ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                    ," PLZ"
+                    ," Land"
+                    ," Telefonnummer"
+                    ," "]
+        , cBayes = [" Name"
+                   ," An E-Mail-Adresse"
+                   ," Von E-Mail-Adresse"
+                   ," Artikelbezeichnung"
+                   ," Typ"
+                   ," Status"
+                   ," Käufer-ID"
+                   , " Status der Gegenpartei"," Adressstatus"
+                   , " Option 1 - Name"
+                   , " Option 2 - Name"
+                   ," Auktions-Site"
+                   ," K\228ufer-ID"
+                   ," Artikel-URL"
+                   ," Adresszeile 1"
+                   ," Zus\228tzliche Angaben"
+                   ," Ort"
+                   ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                   ," PLZ"
+                   ," Land"
+                   ," Telefonnummer"
+                   ]
+        , cDescription = [" Name"
+                         ," Artikelbezeichnung"
+                         ," Typ"
+                         ," Zeit"]
         }
--- ++ if withGeb then [(  "Aktiva:Konten:Paypal", am geb)]
---    else []
--- withGeb = any (flip isInfixOf (getCsv geb x) . show ) [1..9]
-
-paypal_format = "paypal"
-
-
-paypal_bayes = (paypal_format,
-  [" Name"
-  ," An E-Mail-Adresse"
-  ," Von E-Mail-Adresse"
-  ," Verwendungszweck"
-  ," Art"
-  ," Status"
-  ," Käufer-ID"
-  , " Status der Gegenpartei"," Adressstatus"
-  , " Option 1 - Name"
-  , " Option 2 - Name"
-  ," Auktions-Site"
-  ," K\228ufer-ID"
-  ," Artikel-URL"
-  ," Adresse"
-  ," Zus\228tzliche Angaben"
-  ," Ort"
-  ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
-  ," PLZ"
-  ," Land"
-  ," Telefonnummer der Kontaktperson"
-  ])
-
-paypalHeader :: IsString t => Int -> [t]
-paypalHeader 2016 = ["Datum"," Zeit"," Zeitzone"," Name"," Art"," Status"," W\228hrung"," Brutto"," Geb\252hr"," Netto"," Von E-Mail-Adresse"," An E-Mail-Adresse"," Transaktionscode"," Status der Gegenpartei"," Adressstatus"," Verwendungszweck"," Artikelnummer"," Betrag f\252r Versandkosten"," Versicherungsbetrag"," Umsatzsteuer"," Option 1 - Name"," Option 1 - Wert"," Option 2 - Name"," Option 2 - Wert"," Auktions-Site"," K\228ufer-ID"," Artikel-URL"," Angebotsende"," Vorgangs-Nr."," Rechnungs-Nr."," Txn-Referenzkennung"," Rechnungsnummer"," Individuelle Nummer"," Best\228tigungsnummer"," Guthaben"," Adresse"," Zus\228tzliche Angaben"," Ort"," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"," PLZ"," Land"," Telefonnummer der Kontaktperson"," "]
-
-paypalHeader 2013 = ["Datum"," Zeit"," Zeitzone"," Name"," Art"," Status"," W\228hrung"," Brutto"," Geb\252hr"," Netto"," Von E-Mail-Adresse"," An E-Mail-Adresse"," Transaktionscode"," Status der Gegenpartei"," Adressstatus"," Verwendungszweck"," Artikelnummer"," Betrag f\252r Versandkosten"," Versicherungsbetrag"," Umsatzsteuer"," Option 1 - Name"," Option 1 - Wert"," Option 2 - Name"," Option 2 - Wert"," Auktions-Site"," K\228ufer-ID"," Artikel-URL"," Angebotsende"," Vorgangs-Nr."," Rechnungs-Nr."," Txn-Referenzkennung"," Rechnungsnummer"," Individuelle Nummer"," Menge"," Best\228tigungsnummer"," Guthaben"," Adresse"," Zus\228tzliche Angaben"," Ort"," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"," PLZ"," Land"," Telefonnummer der Kontaktperson"," "]
-
-paypalHeader v = versionError "Paypal" v
+    ,base { cVersion = "2014"
+         , cHeader = ["Datum"
+                     ," Zeit"
+                     ," Zeitzone"
+                     ," Name"
+                     ," Art"
+                     ," Status"
+                     ," W\228hrung"
+                     ," Brutto"
+                     ," Geb\252hr"
+                     ," Netto"
+                     ," Von E-Mail-Adresse"
+                     ," An E-Mail-Adresse"
+                     ," Transaktionscode"
+                     ," Status der Gegenpartei"
+                     ," Adressstatus"
+                     ," Verwendungszweck"
+                     ," Artikelnummer"
+                     ," Betrag f\252r Versandkosten"
+                     ," Versicherungsbetrag"
+                     ," Umsatzsteuer"
+                     ," Option 1 - Name"
+                     ," Option 1 - Wert"
+                     ," Option 2 - Name"
+                     ," Option 2 - Wert"
+                     ," Auktions-Site"
+                     ," K\228ufer-ID"
+                     ," Artikel-URL"
+                     ," Angebotsende"
+                     ," Vorgangs-Nr."
+                     ," Rechnungs-Nr."
+                     ," Txn-Referenzkennung"
+                     ," Rechnungsnummer"
+                     ," Individuelle Nummer"
+                     ," Best\228tigungsnummer"
+                     ," Guthaben"
+                     ," Adresse"
+                     ," Zus\228tzliche Angaben"
+                     ," Ort"
+                     ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                     ," PLZ"
+                     ," Land"
+                     ," Telefonnummer der Kontaktperson"
+                     ," "]
+         , cBayes = [" Name"
+                    ," An E-Mail-Adresse"
+                    ," Von E-Mail-Adresse"
+                    ," Verwendungszweck"
+                    ," Art"
+                    ," Status"
+                    ," Käufer-ID"
+                    , " Status der Gegenpartei"," Adressstatus"
+                    , " Option 1 - Name"
+                    , " Option 2 - Name"
+                    ," Auktions-Site"
+                    ," K\228ufer-ID"
+                    ," Artikel-URL"
+                    ," Adresse"
+                    ," Zus\228tzliche Angaben"
+                    ," Ort"
+                    ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                    ," PLZ"
+                    ," Land"
+                    ," Telefonnummer der Kontaktperson"
+                    ]
+         , cDescription = [" Name"
+                          ," Verwendungszweck"
+                          ," Art"
+                          ," Zeit"]
+         }
+  , base { cVersion = "2013"
+         , cHeader = ["Datum"
+                     ," Zeit"
+                     ," Zeitzone"
+                     ," Name"
+                     ," Art"
+                     ," Status"
+                     ," W\228hrung"
+                     ," Brutto"
+                     ," Geb\252hr"
+                     ," Netto"
+                     ," Von E-Mail-Adresse"
+                     ," An E-Mail-Adresse"
+                     ," Transaktionscode"
+                     ," Status der Gegenpartei"
+                     ," Adressstatus"
+                     ," Verwendungszweck"
+                     ," Artikelnummer"
+                     ," Betrag f\252r Versandkosten"
+                     ," Versicherungsbetrag"
+                     ," Umsatzsteuer"
+                     ," Option 1 - Name"
+                     ," Option 1 - Wert"
+                     ," Option 2 - Name"
+                     ," Option 2 - Wert"
+                     ," Auktions-Site"
+                     ," K\228ufer-ID"
+                     ," Artikel-URL"
+                     ," Angebotsende"
+                     ," Vorgangs-Nr."
+                     ," Rechnungs-Nr."
+                     ," Txn-Referenzkennung"
+                     ," Rechnungsnummer"
+                     ," Individuelle Nummer"
+                     ," Menge"
+                     ," Best\228tigungsnummer"
+                     ," Guthaben"
+                     ," Adresse"
+                     ," Zus\228tzliche Angaben"
+                     ," Ort"
+                     ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                     ," PLZ"
+                     ," Land"
+                     ," Telefonnummer der Kontaktperson"
+                     ," "]
+         , cBayes = [" Name"
+                    ," An E-Mail-Adresse"
+                    ," Von E-Mail-Adresse"
+                    ," Verwendungszweck"
+                    ," Art"
+                    ," Status"
+                    ," Käufer-ID"
+                    ," Status der Gegenpartei"," Adressstatus"
+                    ," Option 1 - Name"
+                    ," Option 2 - Name"
+                    ," Auktions-Site"
+                    ," K\228ufer-ID"
+                    ," Artikel-URL"
+                    ," Adresse"
+                    ," Zus\228tzliche Angaben"
+                    ," Ort"
+                    ," Staat/Provinz/Region/Landkreis/Territorium/Pr\228fektur/Republik"
+                    ," PLZ"
+                    ," Land"
+                    ," Telefonnummer der Kontaktperson"
+                    ]
+         , cDescription = [" Name"
+                          ," Verwendungszweck"
+                          ," Art"
+                          ," Zeit"]
+         }]
 
 -- * other stuff
 
@@ -414,15 +666,27 @@ instance Show Date2 where
 data Date2 = D String String String  -- year month day
   deriving (Eq)
 
-defaultFormats :: HM.HashMap T.Text [T.Text]
-defaultFormats = HM.fromList [ paypal_bayes
-                             , aqBankingBayes]
 
-askBayesFields
-  :: (MonadError Msg m, MonadReader (Options user Config env) m) =>
-     Source -> m [T.Text]
-askBayesFields source = do
-  formats <- readConfig cFormats
-  fields <- lookupErrM "Format has to be configured" HM.lookup
-            (sFormat source) $ HM.union formats defaultFormats
+toBayes
+  :: MonadError Msg m
+  => VersionedCSV a
+  -> m (SFormat DefaultVersion, M.Map Version [T.Text])
+toBayes = fmap (second $ fmap $ cBayes . cRaw)
+  
+defaultFields
+  :: MonadError Msg m =>
+     m (M.Map (SFormat ()) (M.Map Version [T.Text]))
+defaultFields = fromListUnique . fmap (first $ (() <$))
+  =<< sequence [toBayes paypalImport, toBayes aqbankingImport]
+
+getBayesFields
+  :: MonadError Msg m
+  => Source -> m [T.Text]
+getBayesFields source = do
+  fields <- lookupErrM "Version has to be configured" M.lookup
+            (fVersion format)
+            =<< lookupErrM "Format has to be configured" M.lookup
+            (() <$ format)
+            =<< defaultFields
   return $ mapMaybe (flip M.lookup $ sStore source) fields
+    where format = sFormat source

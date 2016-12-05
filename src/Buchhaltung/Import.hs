@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Buchhaltung.Import
 where
@@ -38,13 +39,21 @@ fillTxn datetime e@(ImportedEntry t (accId, am) source) = do
                         <> datetime <> com (tcomment t)
             ,tpostings =
              [ nullposting{paccount= acc
-                           ,pamount = mamountp' $ T.unpack am }
-             , nullposting{paccount= todo <> ":" <> acc
+                           ,pamount = amount }
+             , nullposting{paccount=  todo <> ":" <>
+                            todoAcc (isNegativeMixedAmount amount)
                           ,pamount = missingmixedamt }
              -- leaves amount missing. (alternative: use
              -- balanceTransaction Nothing)
              ]}
-  return $ e{ieT = tx, iePostings=()}
+      amount = mamountp' $ T.unpack am
+      todoAcc Nothing = "Mixed"
+      todoAcc (Just False) = "Negative"
+      todoAcc (Just True) = "Positive"
+  return $ e{ieT = either (const tx) id $ balanceTransaction Nothing tx
+            -- try to balance transaction. leave missing amount if
+            -- this fails, which should never happen
+            , iePostings=()}
   where
     com "" = ""
     com b = " (" <> b <> ")"
@@ -86,7 +95,7 @@ importWrite conv text =do
     =<< importCat (Just journalPath) conv text
 
 importHandleWrite
-  :: Importer env -> FullOptions env -> Handle -> ErrorT IO ()
+  :: Importer env -> FullOptions (env, Maybe Version) -> Handle -> ErrorT IO ()
 importHandleWrite (Importer chH conv) options handle = do
   text <- liftIO $ do
     maybe (return ()) ($ handle) chH
@@ -94,7 +103,7 @@ importHandleWrite (Importer chH conv) options handle = do
   void $ runRWST (importWrite conv text) options ()
   
 importReadWrite
-  :: Importer env -> FullOptions env -> FilePath -> ErrorT IO ()
+  :: Importer env -> FullOptions (env, Maybe Version) -> FilePath -> ErrorT IO ()
 importReadWrite imp opt file =
   withFileM file ReadMode $ importHandleWrite imp opt
 

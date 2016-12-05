@@ -117,7 +117,7 @@ suggestAccount tx = do
   maybe (g accs) (return . Just . Default "manual:\t\t\t") $ wInfo tx
   
 bayesLine :: Monad m => WithSource a -> MatchT m String
-bayesLine w = T.unpack . T.unwords <$> askBayesFields (wSource w)
+bayesLine w = T.unpack . T.unwords <$> getBayesFields (wSource w)
 
 learn :: [(AccountName, NonEmpty (WithSource a))]
       -> MatchT IO ()

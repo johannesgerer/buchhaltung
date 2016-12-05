@@ -346,6 +346,7 @@ data Choice = Reenter | Manual | Choose Int
 -- | user input: choose one from a list of choices
 choose :: [String] -- ^ choices
        -> IO Choice
+choose [] = return Manual
 choose m = do
   putStr $ unlines $ reverse $
     zipWith pr [1..] m

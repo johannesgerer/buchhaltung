@@ -14,6 +14,7 @@ module Buchhaltung.Common
   (module Buchhaltung.Common
   ,module Buchhaltung.Utils
   ,module Buchhaltung.Types
+  ,textstrip
   )
 where
 
@@ -21,7 +22,7 @@ import           Buchhaltung.Types
 import           Buchhaltung.Utils
 import           Control.Applicative ((<$>))
 import           Control.Arrow
-import           Control.Lens hiding (noneOf)
+import           Control.Lens hiding (noneOf, Getter, (<&>))
 import           Control.Monad.RWS.Strict
 import           Control.Monad.Writer
 import qualified Data.Aeson as A
@@ -36,7 +37,9 @@ import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as E
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
+import qualified Data.Map.Strict as M
 import           Data.Ord
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as TL
@@ -47,6 +50,7 @@ import           Data.Time.Format
 import           Data.Traversable (traverse)
 import qualified Data.Vector as V
 import           Hledger.Data hiding (at)
+import           Hledger (textstrip)
 import           Hledger.Query
 import           Hledger.Read
 import           Hledger.Reports (defreportopts)
@@ -306,7 +310,7 @@ normalizeMixedAmountWith f (Mixed ams) = Mixed $ g <$> ams
 data Importer env = Importer
   { iModifyHandle :: Maybe (Handle -> IO ())
   -- ^ e.g. 'windoof'
-  , iImport :: T.Text -> CommonM env [ImportedEntry]
+  , iImport :: T.Text -> CommonM (env, Maybe Version) [ImportedEntry]
   }
 
 windoof :: Maybe (Handle -> IO ())
@@ -316,6 +320,53 @@ windoof = Just $ \h -> hSetEncoding h latin1
 
 parseDatum :: T.Text -> Day
 parseDatum = parseTimeOrError True defaultTimeLocale "%d.%m.%Y" . T.unpack
+
+-- | retrieval function
+type Getter a = MyRecord -> a
+
+data CsvImport a = CSV
+  { cFilter :: MyRecord -> Bool
+  -- ^ should this csv line be processed?
+  , cAmount :: Getter T.Text
+  -- ^ Amount parsable by 'mamoumtp\''
+  , cDate :: Getter Day
+  , cVDate :: Getter (Maybe Day)
+  , cBank :: a -> Getter T.Text
+  , cAccount :: a -> Getter T.Text
+  , cHeader      :: [T.Text]
+  , cBayes       :: [T.Text]
+  , cDescription :: [T.Text]
+  , cVersion     :: Version
+  , cSeparator :: Char
+  }
+
+data CheckedCsvImport a = UnsafeCSV { cRaw :: CsvImport a }
+  -- deriving (Show)
+
+toVersionedCSV
+  :: SFormat DefaultVersion
+     -> [CsvImport a] -> VersionedCSV a
+toVersionedCSV format headers = sequence $ (,) format $ fromListUnique $
+  (cVersion . cRaw &&& id) . checkRawCSV format <$> headers
+
+type VersionedCSV a = forall m. MonadError Msg m
+                      => m (SFormat DefaultVersion, M.Map Version (CheckedCsvImport a))
+                      -- ^ (format with default version, _)
+
+data DefaultVersion = DefaultVersion { fromDefaultVersion :: Version }
+
+checkRawCSV :: SFormat b -> CsvImport a -> CheckedCsvImport a
+checkRawCSV format rh =
+  if null missing then UnsafeCSV rh
+  else error $ printf
+       ("format '%s', version '%s': The configured header misses the following "
+        ++ "fields required for Bayes or Description:\n%s")
+       (fName format) (cVersion rh) $ unlines $ uncurry (printf "%s: %s") <$> missing
+  where [head, bayes, desc] = S.fromList  . ($rh) <$> [cHeader, cBayes, cDescription]
+        missing =
+          concatMap (uncurry zip <&> repeat *** (fmap T.unpack . toList . flip S.difference head))
+                  [("cBayes", bayes), ("cDescription", desc)] :: [(String, String)]
+
 
 -- * Pretty Printing
 

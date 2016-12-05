@@ -68,9 +68,7 @@ loop :: (MonadIO m, MonadReader (Options user Config env) m)
 loop exit totalTx iTx new = do
   new' <- gets $ \old -> (key (ieT new) $ M.size old + 1, new)
   dups <- findDuplicates new'
-  let msg iDup = printf
-                 "(Showing %d. of %d duplicates of the %d. of %d transactions)\n"
-                 iDup (length dups) iTx totalTx
+  let msg = format ("Transaction: "%F.d%" of "%F.d%" new\n") iTx totalTx
   checkOrAsk exit new' msg
     $ sortBy (flip $ comparing snd)
     $ (id &&& g) <$> dups
@@ -94,7 +92,7 @@ findDuplicates ((ams,acc,day,ix), _) = lift $ gets $ \old ->
 checkOrAsk :: (MonadIO m, MonadReader (Options user Config env) m)
            => (() -> M r m ())
            -> (Key, FilledEntry)
-           -> (Int -> String)
+           -> TL.Text -- ^ message
            -> [((Key,Entry), Maybe Int)] -> M r m ()
 checkOrAsk _ new _ []  = do
   modify $ uncurry M.insert $ second fromFilled new
@@ -110,8 +108,7 @@ checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
     else do
     let question = (answer =<<) . liftIO $ do
           L.putStr $ L.unlines
-            [ prettyPrint cost (snd new) oldEntry $ length remaining
-            , T.pack $ msg 1
+            [ prettyPrint cost (snd new) oldEntry msg $ length remaining
             , "Yes, they are duplicates. Update the source [y]"
             , "No, " <> (if null remaining then "Save as new transaction"
                          else "Show next duplicate") <> " [n]"
@@ -121,7 +118,7 @@ checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
           hSetBuffering stdin NoBuffering
           getChar <* putStrLn ""
         answer 'y' = overwriteOldSource
-        answer 'n' = checkOrAsk exit new (msg . succ) remaining
+        answer 'n' = checkOrAsk exit new msg remaining
         answer 'q' = return ()
         answer 'Q' = exit ()
         answer _   = question
@@ -132,8 +129,10 @@ checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
           modify $ M.adjust (applyChanges tag new oldKey) oldKey
           liftIO $ T.putStrLn "\nUpdated duplicate's source.\n"
 
-prettyPrint :: Maybe Int -> FilledEntry -> Entry -> Int -> T.Text
-prettyPrint cost new old remain =
+prettyPrint :: Maybe Int -> FilledEntry -> Entry -> TL.Text -- ^ Message
+            -> Int -- ^ Remaining
+            -> T.Text
+prettyPrint cost new old msg remain =
       let union2 = f . second unzip . unzip
                           . M.toList . union
           union old = M.mergeWithKey g
@@ -155,9 +154,10 @@ prettyPrint cost new old remain =
         L.unlines $
         [ union2 . either (const mempty) sourceToMap $ oldSource ]
         ++ [ sformat
-             ("changes: "%F.s%"/"%F.s%", remaining number of old canditates "%F.d)
+             ("changes: "%F.s%"/"%F.s%"\n"%F.t%"Remaining existing duplicates: "%F.d)
              (def (show . negate) cost)
              (def (show . TL.length . json) $ eitherToMaybe $ ieSource old)
+             msg
              remain
            ]
         ++ showError oldSource

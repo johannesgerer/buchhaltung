@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Buchhaltung.Commandline where
 
 import           Buchhaltung.AQBanking
@@ -42,26 +43,31 @@ run (Add partners) options =
   void $ withJournals [imported, addedByThisUser] options
   $ runRWST add options{oEnv = partners}
 
-run (Import file action) options = runImport action
+run (Import version file action) options = runImport action
   where runImport (Paypal puser) =
-          importReadWrite paypalImporter options{oEnv = puser} file
+          importReadWrite paypalImporter (options' puser) file
+        runImport (ComdirectVisa blz) =
+          importReadWrite comdirectVisaImporter (options' blz) file
         runImport AQBankingImport =
-          importReadWrite aqbankingImporter options file
+          importReadWrite aqbankingImporter (options' ()) file
+        options' env = options{oEnv = (env, version)}
 
-run (Update doMatch doRequest) options = do
+run (Update version doMatch doRequest) options = do
   res <- runAQ options $ aqbankingListtrans doRequest
   void $ runRWST
     (mapM (importWrite $ iImport aqbankingImporter) res)
-    options ()
+    options{oEnv = ((), version)} ()
   when doMatch $ run Match options
 
 run (Commit args) options = flip runReaderT options $ do
+  un <- readUser $  show . name
   dir <- takeDirectory <&> absolute =<< readLedger mainLedger
   bal <- lift $ runAQ options $ readAqbanking ["listbal"]
   sheet <- lift $ runLedger readProcess' ["balance", "-e", "tomorrow"] options
   liftIO $ do setCurrentDirectory dir
               callProcess "git" $ "commit":args ++
-                ["-m", intercalateL "\n" $ bal ++ ["Balance Sheet:", sheet]]
+                ["-m", intercalateL "\n" $ ["User " ++ un, ""]
+                  ++ bal ++ ["Balance Sheet:", sheet]]
 
 run ListBalances options = void $ runAQ options $ callAqbanking ["listbal"]
   
