@@ -59,9 +59,9 @@ run (Commit args) options = flip runReaderT options $ do
   dir <- takeDirectory <&> absolute =<< readLedger mainLedger
   bal <- lift $ runAQ options $ readAqbanking ["listbal"]
   sheet <- lift $ runLedger readProcess' ["balance", "-e", "tomorrow"] options
-  liftIO $ withCurrentDirectory dir $ do
-    callProcess "git" $ "commit":args ++
-      ["-m", intercalateL "\n" $ bal ++ ["Balance Sheet:", sheet]]
+  liftIO $ do setCurrentDirectory dir
+              callProcess "git" $ "commit":args ++
+                ["-m", intercalateL "\n" $ bal ++ ["Balance Sheet:", sheet]]
 
 run ListBalances options = void $ runAQ options $ callAqbanking ["listbal"]
   
