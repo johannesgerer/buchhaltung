@@ -100,8 +100,8 @@ aqbankingImport :: VersionedCSV env
 aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
   [CSV
     { cFilter  = const True
-    , cAmount = getCsvConcat [ "value_currency"
-                             , "value_value"]
+    , cAmount = getCsvConcat [ "value_value"
+                             , "value_currency"]
     , cDate = readdate . getCsv "date"
     , cVDate = Just . readdate . getCsv "valutadate"
     , cBank = const $ getCsv "localBankCode"
