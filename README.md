@@ -1,5 +1,7 @@
 # Buchhaltung  [![Build Status](https://travis-ci.org/johannesgerer/buchhaltung.svg?branch=master)](https://travis-ci.org/johannesgerer/buchhaltung)
 
+# This README is under developement. Come back on 12/12/2016
+
 > What advantages does he derive from the system of book-keeping by double entry! It is among the finest inventions of the human mind; every prudent master of a house should introduce it into his economy.
 > -- Johann Wolfgang von Goethe
 
