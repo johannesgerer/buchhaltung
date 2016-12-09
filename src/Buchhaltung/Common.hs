@@ -159,6 +159,7 @@ saveChanges change = do
               putStrLn $ "\n"++ show n ++" Transactions were changed"
     return j
 
+mixed' :: Amount -> MixedAmount
 mixed' = mixed . (:[])
 
 showTransactions :: Hledger.Data.Journal -> [Char]
@@ -252,6 +253,7 @@ commentPrefix :: ImportTag -> T.Text
 commentPrefix (ImportTag tag) = tag <> ": "
 
 
+trimnl :: T.Text -> T.Text
 trimnl = mconcat . T.lines
 
 -- * make CSV data easier to handle

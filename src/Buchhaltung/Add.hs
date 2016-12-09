@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE KindSignatures #-}
@@ -16,8 +17,10 @@ import           Buchhaltung.Zipper
 import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.RWS.Strict
+import           Data.Bits
 import           Data.Char
 import           Data.Decimal
+import           Data.Default
 import           Data.Either
 import           Data.Foldable
 import           Data.Function
@@ -146,7 +149,7 @@ mainLoop = do
                         ,iAc,iAm)
       useMatch t = return ( nulltransaction{tdate=tdate t,
                                             tdescription=tdescription t}
-                          ,paccount p2, ("",negate $ pamount p2))
+                          ,paccount p2, AA "" Nothing $ negate $ pamount p2)
         where _:(p2:_) =  tpostings t
         --                   ,paccount p3, ("",negate $ pamount p3))
         -- where p3 = fromMaybe (pos!!2) $ asum $
@@ -237,7 +240,7 @@ finishTransaction check (Just (tr,postings)) = do
       toTP $ nullP (userAccount partner) (negate sum)
       ++ E.toList ps
 
-    toTP ps = (if check then either err id . balanceTransaction Nothing
+    toTP ps = (if check then either err id . balanceTransactionIfRequired
               else id)
               tr {tpostings = increasePrec <$> ps ,tcomment = comment}
 
@@ -275,52 +278,68 @@ clearNthPosting n t = t{tpostings=p'}
 
 -- * Transaction suggestions
 
+data Asserted a = AA { aComment :: Comment
+                   , aAssertion :: Maybe Amount
+                   , aAmount :: a }
+              deriving (Functor, Show)
+
+instance Default AssertedAmount where
+  def = AA "" Nothing $ mixed' nullamt
+
+type AssertedAmount = Asserted MixedAmount
+
+fromPosting :: Posting -> Asserted MixedAmount
+fromPosting = AA <$> pcomment <*> pbalanceassertion <*> pamount
+
+showAssertedAmount :: Asserted MixedAmount -> T.Text
+showAssertedAmount a = showMixedAmount2 (aAmount a) <>
+  maybe "" ((" = " <>) . showAmount2) (aAssertion a)
+
+
 -- | Find a transactions matching the entered amount
-sugTrans :: AddT IO ((Comment, MixedAmount), Maybe Transaction)
-sugTrans = --error $ unlines $ show <$> Set.elems s
-  do
-    r@(_, iAm) <- second negate <$> askAmount (Just $ mixed' nullamt)
-      "Enter amount (zero for any transaction)" Nothing
+sugTrans :: AddT IO (AssertedAmount, Maybe Transaction)
+sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
+             "Enter amount (zero for any transaction)" Nothing
+  where sugTrans' answ@AA{ aAmount = iAm, aAssertion = Nothing} = do
+          accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
+          user <- readUser id
+          let
+            f user Transaction{tpostings=p1:(p2:_)} =
+              -- the first posting's account is part of the accounts
+              -- automaticcaly handled by csv2ledger
+              (paccount p1 `S.member` accs)
+              -- the first amount of the first posting matched the entered
+              -- amount in absolute values
+              && (on (==) (abs.aquantity.head.amounts) iAm ( pamount p1 )
+                  -- or the entered amount is zero
+                  || mixed' nullamt == iAm
+                  -- or the amount occurs in the comment of the second
+                  || (comma.fshow.abs.aquantity.head.amounts $ iAm)
+                  `L.isInfixOf` pcomment p2 )
+              -- the second posting is not cleared
+              && not (pstatus p2 == Cleared)
+              -- doch nicht (siehe notiz vom [2013-06-02 Sun]):
+              -- no transaction exists offsetting the second
+              -- posting (e.g. for transactions entered, before they were
+              -- paid)
+              -- && fromMaybe True ( flip Set.notMember s <$>
+              --     toMyP t p2{pamount=negate $ pamount p2})
 
-    accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
-    user <- readUser id
-    let
-      f user Transaction{tpostings=p1:(p2:_)} =
-        -- the first posting's account is part of the accounts
-        -- automaticcaly handled by csv2ledger
-        (paccount p1 `S.member` accs)
-        -- the first amount of the first posting matched the entered
-        -- amount in absolute values
-        && (on (==) (abs.aquantity.head.amounts) iAm ( pamount p1 )
-            -- or the entered amount is zero
-            || mixed' nullamt == iAm
-            -- or the amount occurs in the comment of the second
-            || (comma.fshow.abs.aquantity.head.amounts $ iAm)
-            `L.isInfixOf` pcomment p2 )
-        -- the second posting is not cleared
-        && not (pstatus p2 == Cleared)
-        -- doch nicht (siehe notiz vom [2013-06-02 Sun]):
-        -- no transaction exists offsetting the second
-        -- posting (e.g. for transactions entered, before they were
-        -- paid)
-        -- && fromMaybe True ( flip Set.notMember s <$>
-        --     toMyP t p2{pamount=negate $ pamount p2})
-
-        -- ignore certain accounts
-        && (not $ isIgnored user $ paccount p2)
-      f _ _ = False
-        -- s :: S.Set MyPosting
-        -- s = error "doch benutzt?" -- Set.fromList $ toMyPs =<< jtxns j
-      comma = T.replace "." ","
-      selectMatch :: [Transaction]
-                  -> AddT IO ((Comment, MixedAmount), Maybe Transaction)
-      selectMatch m = g =<< (liftIO $ choose $ show <$> m')
-        where m' = take 20 $ sortBy (flip $ comparing tdate) m
-              g Manual = return (r, Nothing)
-              g (Choose i) = return $ (r, Just $ atNote "selectMatch" m' i)
-              g Reenter = sugTrans
-    selectMatch =<< gets (filter (f user) . jtxns)
-
+              -- ignore certain accounts
+              && (not $ isIgnored user $ paccount p2)
+            f _ _ = False
+              -- s :: S.Set MyPosting
+              -- s = error "doch benutzt?" -- Set.fromList $ toMyPs =<< jtxns j
+            comma = T.replace "." ","
+            selectMatch :: [Transaction]
+                        -> AddT IO (AssertedAmount, Maybe Transaction)
+            selectMatch m = g =<< (liftIO $ choose $ show <$> m')
+              where m' = take 20 $ sortBy (flip $ comparing tdate) m
+                    g Manual = return (answ, Nothing)
+                    g (Choose i) = return $ (answ, Just $ atNote "selectMatch" m' i)
+                    g Reenter = sugTrans
+          selectMatch =<< gets (filter (f user) . jtxns)
+        sugTrans' a = return (a, Nothing)
 -- data MyPosting = MyP {mypDay::Day, mypAcc::AccountName,mypAmt::Amount}
 --                  deriving (Show)
 
@@ -396,14 +415,18 @@ myEd =
            -- http://www.ledger-cli.org/3.0/doc/ledger3.html#Effective-Dates
            -- , ('D', ModifyStateM (editDate j)  ?? "Edit effective date")
          , ('e', ModifyAllM editCurAmount ?? "Edit current amount")
-         , ('+', ModifyAllM (modifyCurAmount (+) False) ?? "Add to amount")
+         , ('+', ModifyAllM
+             (modifyCurAmount (\o n -> fmap (on (+) replaceMissing
+                                             $ aAmount n) o) False)
+             ?? "Add to amount")
          , ('j', Fwd    ?? "Move forward one item.")
          , ('k', Back   ?? "Move backward one item.")
-         , ('Q', Cancel ?? "Discard entry")
+         , ('Q', Cancel ?? "discard entry and Quit")
+         , ('m', Modify setMissing ?? "set amount to 'missing'")
          , ('s', Done checkDone  ?? "Save entry")
          , ('c', Done checkDone  ?? "Save entry")
          , ('u', Modify nextNotFirst  ?? "Next user")
-         , ('m', ModifyAll (assignOpenBalance (119/19)) ?? "Fill with MWSt")
+         , ('v', ModifyAll (assignOpenBalance (119/19)) ?? "Fill with VAT")
          , ('p', ModifyAllM
                  ((<$> liftIO askPercent) . flip assignOpenBalance)
                  ?? "Ask for percentage")
@@ -424,8 +447,8 @@ mainPrompt =
   "\n" <> intercalateL "\n" ( intercalateL "   " <$> f) <> "\n"
   where f =
           [["[r]est ","[j]next","[u]ser ","[+]add","[t]itle","[?]Help  ","[s]ave    ","[p]%"]
-          ,["[h]alf ","[k]prev","[n/N]ew","[e]dit","[d]ate ","[x]remove","[Q]discard","[m]WSt"]
-          ,["       ","       ","       ","      ","       ","         ","[c]lear   ","      "]]
+          ,["[h]alf ","[k]prev","[n/N]ew","[e]dit","[d]ate ","[x]remove","[Q]discard","[v]AT"]
+          ,["       ","       ","       ","[m]iss","       ","         ","[c]lear   ","      "]]
 
 quiet :: Monad m => a -> m (Maybe a)
 quiet = return . Just
@@ -441,6 +464,33 @@ nextNotFirst :: EditablePosting -> EditablePosting
 nextNotFirst s | epNumber s > 0 = next s
                | otherwise = s
 
+balanceTransactionIfRequired
+  :: Transaction -> Either String Transaction
+balanceTransactionIfRequired tx = do
+  [real, virt] <- mapM (balanceRequired . ($ tx))
+    [realPostings, balancedVirtualPostings]
+  when (xor real virt) $ throwError
+    "Not implemented: Assignements only in on of the two groups of postings"
+  if real then balanceTransaction Nothing tx
+    else return tx
+
+-- | check, if the transaction should be passed through
+-- `balanceTransaction` to infer missing amounts
+balanceRequired
+  :: MonadError String m => [Posting] -> m Bool
+balanceRequired [] = return False
+balanceRequired ps =
+  if assignments > 0 then
+    if length noAmount - assignments <= 1
+    then return False
+    else throwError $ "There cannot be more than one "
+         ++ "posting with neither amount nor assertion"
+  else return True
+  where noAmount = filter hasAmount ps
+        assignments = length $ filter
+          (isJust . pbalanceassertion) noAmount
+
+
 -- | Try to balance the transactions and present the final
 -- transactions
 checkDone :: LState EditablePosting Transaction ->
@@ -450,7 +500,7 @@ checkDone st@LS{userSt = trans, ctx = postings} = do
   (userT, partnerT) <- finishTransaction False $ Just (trans, integrate postings)
   let
     txs :: [(User, Either String Transaction)]
-    txs = second (balanceTransaction Nothing)
+    txs = second balanceTransactionIfRequired
         <$> maybeToList ((,) user <$> userT) ++ fmap (first pUser) partnerT
   res <- liftIO $ mapM g txs
   return$ if and res then Just st else Nothing
@@ -515,21 +565,20 @@ myAskAccount j = askAccount completionList
   where completionList = nub $ sort [ paccount p | t <- jtxns j
                                       , p <- tpostings t]
 
-askAmount :: Maybe MixedAmount -- ^ default value, if "" is entered
+askAmount :: Maybe AssertedAmount -- ^ default value, if "" is entered
              -> T.Text  -- ^ prompt
              -> Maybe T.Text -- ^ initial
-             -> AddT IO (Comment, MixedAmount)
+             -> AddT IO AssertedAmount
 askAmount def pr init = do
   j <- get
-  liftIO $ editLoop (extract j) "Amount" (def >>= useDef) Nothing (Left pr) init
+  liftIO $ editLoop (extract j) "Amount"
+    ((id &&& showAssertedAmount) <$> def) Nothing (Left pr) init
   where
-    extract :: Journal -> T.Text -> Either String (Comment, MixedAmount)
-    extract j input = left show $ (,) cmt . mixed' <$> parseAmount j am
-
+    extract :: Journal -> T.Text -> Either String AssertedAmount
+    extract j input = left show $  (\a -> a { aComment = cmt })
+      <$> parseAmount j am
       where (am, cmt) =  textstrip *** (textstrip . L.dropWhile (==';')) <<< L.break (==';') $ input
               :: (T.Text, T.Text)
-    useDef x = Just (("",x), showMixedAmount2 x)
-
 
 -- -- | Parse and update an amount to equal its 'show' value
 -- --
@@ -539,10 +588,14 @@ askAmount def pr init = do
 -- toShow j (Mixed ams) = Mixed $ fmap g ams
 --   where g = either (error.show) id . parseAmount j . fshow
 
+
 parseAmount
   :: Journal
-     -> T.Text -> Either (MP.ParseError Char MP.Dec) Amount
-parseAmount j = parseWithState' j amountp
+     -> T.Text -> Either (MP.ParseError Char MP.Dec) AssertedAmount
+parseAmount j = parseWithState' j $ ((flip $ AA "") <$>
+                (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
+                <*> partialbalanceassertionp
+                                    ) <* MP.eof
 
 -- | (unused) overwrite upstream behavior to use defined or incurred
 -- commodities
@@ -614,12 +667,21 @@ editablePosting account amt n = do
 -- | generate and add new 'Posting' to 'EditablePosting'
 addPosting
   :: AccountName
-     -> Maybe (T.Text, MixedAmount) -> EditablePosting -> EditablePosting
+     -> Maybe AssertedAmount -> EditablePosting -> EditablePosting
 addPosting _        Nothing s = s
-addPosting account (Just (cmt, iam)) s = s{epPosting=Just nullposting{
-  paccount=account,
-  pcomment=cmt,
-  pamount=iam}}
+addPosting account (Just (AA cmt ass iam)) s =
+  s{epPosting=Just nullposting
+              { paccount=account
+              , pcomment = cmt
+              , pbalanceassertion = ass
+              , pamount = iam}}
+
+setMissing :: EditablePosting -> EditablePosting
+setMissing ep = addPosting (epAccount ep)
+                (Just $ missingmixedamt <$ maybe def fromPosting
+                 (epPosting ep)) ep
+
+
 
 removeAmount :: EditablePosting -> EditablePosting
 removeAmount ep = ep{epPosting=Nothing}
@@ -644,15 +706,22 @@ editCurAmount = modifyCurAmount (const id) True
 
 -- | modfiy current amount by asking for a new amount, that is
 -- combined with the old to get a new amount (e.g. with (+))
-modifyCurAmount ::(MixedAmount -> MixedAmount -> MixedAmount)
+modifyCurAmount ::(AssertedAmount -> AssertedAmount -> AssertedAmount)
                -- ^ oldAmout -> enteredAmount -> newAmount
                -> Bool  -- ^ Show old amound
                -> EditablePostings -> AddT IO EditablePostings
 modifyCurAmount new showO z@LZ{past=(s@EditablePosting{epAccount=ac} E.:| ps)} = do
   iAm <- askAmount olda ("Amount for " <> ac) solda
-  return $ moveToNextEmpty z{ past = addPosting ac (Just $ maybe id (second . new) olda iAm) s E.:| ps }
-    where olda = pamount <$> epPosting s
-          solda = if showO then showMixedAmount2 <$> olda else Nothing
+  return $ moveToNextEmpty z
+    { past = addPosting ac
+      (Just $ maybe iAm (flip new iAm) olda) s E.:| ps }
+    where olda = fromPosting <$> epPosting s
+          solda = guard showO *> fmap showAssertedAmount olda
+
+replaceMissing :: MixedAmount -> MixedAmount
+replaceMissing amt | normaliseMixedAmount amt == missingmixedamt = nullmixedamt
+                   | True = amt
+
 
 
 -- | Hardcoded default number of suggested accounts
@@ -668,7 +737,7 @@ defNumSuggestedAccounts = 20
 -- other user's account is present in the suggestions.
 suggestedPostings :: MonadIO m
                   => AccountName
-                  -> Maybe (Comment,MixedAmount)
+                  -> Maybe AssertedAmount
                   -> AddT m (E.NonEmpty EditablePosting)
 suggestedPostings account am = do
   j <- get
@@ -706,38 +775,45 @@ roundP p = p{epPosting = r1 <$> epPosting p}
         g a = roundTo (fromIntegral $ asprecision $ astyle a) $ aquantity a
 
 
+
 -- | assign the 'Transaction''s open balance to an empty 'EditablePosting'
 assignOpenBalance :: Decimal -> EditablePostings -> EditablePostings
 assignOpenBalance c old@LZ{past=(pr@EditablePosting{epAccount=sac} E.:| ps)} =
   moveToNextEmpty $ old{past= roundP (newp $ epPosting pr) E.:| ps}
   where balance = divideMixedAmount (totalBalance all) c
         all = integrate old
-        newp Nothing = addPosting sac (Just ("", balance)) pr
+        newp Nothing = addPosting sac (Just $ AA "" Nothing balance) pr
         newp (Just op) = pr{epPosting = Just op{pamount= balance + pamount op }}
 
 showEditablePosting :: EditablePostings -> T.Text
 showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
-  renderTable (replicate 3 AlignCenter,replicate 3 AlignLeft,
-               [ "Account",  "Amount", "Frequency"])
+  renderTable (replicate 3 AlignCenter,replicate 4 AlignLeft,
+               [ "Account",  "Amount", "Assertion", "Frequency"])
   [ let mark = if marked then "->" else "  " :: String
     in [
         sformat (F.d % "," %F.sh% " " %F.s% " " %F.st)
          (epNumber x) (either name (name.pUser) $ present $ epUser x) mark
          $ epAccount x
-       ,maybe "" (showMixedAmount2 . pamount ) $ epPosting x
+       ,maybe "" (showMissing . pamount) $ epPosting x
+       ,maybe "" (("= " <>) . showAmount2)
+        $ pbalanceassertion =<< epPosting x
        ,maybe "" fshow $ epFreq x
        ] | (marked,x) <- postings ]
   $ Just ["Open Balance",balance,""]
   where balance = showMixedAmount2 $ totalBalance $ snd <$> postings
         postings = reverse ((,) True pr : mark ps) ++ mark fut
         mark = ((,) False <$>)
+        showMissing amt | normaliseMixedAmount amt == missingmixedamt = "missing"
+                        | True = showMixedAmount2 amt
 
 totalBalance :: [EditablePosting] -> MixedAmount
 totalBalance = negate . sum . fmap pamount . mapMaybe epPosting
 
+showAmount2 :: Amount -> T.Text
+showAmount2 = showMixedAmount2 . mixed'
+
 showMixedAmount2 :: MixedAmount -> T.Text
-showMixedAmount2 = T.pack . showMixedAmountWithPrecision maxprecisionwithpoint
--- showMixedAmount2 = T.pack . showMixedAmountDebug
+showMixedAmount2 amt = T.pack $ showMixedAmountWithPrecision maxprecisionwithpoint amt
 
 -- | ask for new account (display old as default) and use existing
 -- posting, if same account without a posting/amount already exists or
