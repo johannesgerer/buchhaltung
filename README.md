@@ -90,6 +90,10 @@ buchhaltung user1 setup
 
 To clean everythink aqbanking related remove the `cache` folder from your profile and then rerun the `setup` command.
 
+
+defualt currencyu
+
+
 ### Import Transactions
 
 #### 

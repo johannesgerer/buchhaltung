@@ -467,29 +467,36 @@ nextNotFirst s | epNumber s > 0 = next s
 balanceTransactionIfRequired
   :: Transaction -> Either String Transaction
 balanceTransactionIfRequired tx = do
-  [real, virt] <- mapM (balanceRequired . ($ tx))
+  br <- mapM (balanceRequirement . ($ tx))
     [realPostings, balancedVirtualPostings]
-  when (xor real virt) $ throwError
-    "Not implemented: Assignements only in on of the two groups of postings"
-  if real then balanceTransaction Nothing tx
-    else return tx
+  if not $ any required br then return tx
+    else do
+    when (not $ all possible br) $ throwError
+      $ "Not implemented: this transaction has some postings that "
+      ++ "need to be balanced while others cannot be balanced."
+      ++ show br
+    balanceTransaction Nothing tx
+
+data Balancing = B { possible :: Bool
+                   , required :: Bool
+                   }
+  deriving (Show)
 
 -- | check, if the transaction should be passed through
 -- `balanceTransaction` to infer missing amounts
-balanceRequired
-  :: MonadError String m => [Posting] -> m Bool
-balanceRequired [] = return False
-balanceRequired ps =
+balanceRequirement
+  :: MonadError String m => [Posting] -> m Balancing
+balanceRequirement [] = return $ B True False
+balanceRequirement ps =
   if assignments > 0 then
     if length noAmount - assignments <= 1
-    then return False
+    then return $ B False False
     else throwError $ "There cannot be more than one "
          ++ "posting with neither amount nor assertion"
-  else return True
+  else return $ B True True
   where noAmount = filter hasAmount ps
         assignments = length $ filter
           (isJust . pbalanceassertion) noAmount
-
 
 -- | Try to balance the transactions and present the final
 -- transactions
