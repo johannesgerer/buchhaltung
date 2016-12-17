@@ -1,0 +1,39 @@
+users:
+  - name: jo
+    ledgers:
+      
+      # main ledger file passed to `hledger` or `ledger` and used to create the commit message.
+      # this file should (at least) include the other files.
+      mainLedger:      jo/ledger.ledger
+
+      # optional: extra ledger file for hledger
+      mainHledger:     <optional>
+      
+      # ledger file for imported transactions
+      imported:        jo/import.ledger
+
+      # 
+      addedByThisUser: jo/entered_by_jo.ledger
+      addedByOthers:   jo/entered_by_others.ledger
+    accountPrefixOthers: Forderungen:Personen
+    ignoredAccountsOnAdd:
+      - "Transfer"
+      - "Cash"
+    bankAccounts:
+      1243567:
+        8333777: "Assets:Bank Accounts:Bank A:Checking"
+        3827723: "Assets:Bank Accounts:Bank A:Savings"
+      <bank identifier code>:
+        <AccountNumber>: "<LedgerAccount>"
+      Paypal:
+        "<username>": "<LedgerAccount>"
+    aqBanking:
+      configDir: jo/aqbanking
+      connections:
+        - user: '<user>'
+          blz: '<bank identifier code>'
+          url: "<url>"
+          name: <User Name>
+          hbciv: HBCI300 # or one of HBCI201 | HBCI210 | HBCI220 | HBCI300 
+          type: PinTan # or Other
+  - name: secondUser
