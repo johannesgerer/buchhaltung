@@ -1,26 +1,23 @@
 # Buchhaltung  [![Build Status](https://travis-ci.org/johannesgerer/buchhaltung.svg?branch=master)](https://travis-ci.org/johannesgerer/buchhaltung)
 
-# This README is under developement. Come back on 12/12/2016
-
 > What advantages does he derive from the system of book-keeping by double entry! It is among the finest inventions of the human mind; every prudent master of a house should introduce it into his economy.
 > -- Johann Wolfgang von Goethe
 
-*Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*) helps you keep track of your finances on the commandline with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](https://github.com/ledger/ledger/wiki/Ports).
+*Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*), written in Haskell, helps you keep track of your finances on the commandline with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](http://plaintextaccounting.org/).
 
 * Fetch your bank transaction directly via FinTS/HBCI/OFXDirectConnect
 * Import transactions from PayPal (can be customized to other formats)
 * Semi-automatically match transactions to accounts using Bayesian classification
-* Semi-automatic transaction entry with meaningful suggestions in keyboard speed mode
+* Semi-automatic transaction entry with meaningful suggestions in keyboard-based speed mode
  * It is couples/room-mates aware: Create several transaction simultaniuously (see Shared Mode)
 
 ## Status & Aim
 
-### May 2015
 I am actively and successfully using this software for over 4 years and my ledger now contains more than 12.000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
 
 Shortly before presenting about *Buchhaltung* at [Berlin Hack and Tell](http://www.meetup.com/berlin-hack-and-tell), I decided to give it to the open source community.
 
-The software is pre-alpha and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shipable version, that can be used without tinkering with the source.
+The software is alpha and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shipable version, that can be used without tinkering with the source.
 
 Right now, I am using it on Linux but it should also run on Windows and Mac.
 

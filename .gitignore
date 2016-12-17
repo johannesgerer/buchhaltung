@@ -16,3 +16,4 @@ cabal.sandbox.config
 *.hp
 TAGS
 .haskeline_*
+.stack-work
