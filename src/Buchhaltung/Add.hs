@@ -203,7 +203,7 @@ infoNewTx = liftIO . L.putStr .
   sformat ("\nNew transaction created for '" %F.sh% "'\n") . name
 
 -- | Split 'EditablePosting's in User's Postings and (Partner,
--- Posting)
+-- Postings, Open Balance)
 split :: [EditablePosting] -> ([Posting],
                                [(Partner, E.NonEmpty Posting, MixedAmount)])
 split = second (fmap h . E.groupBy (on (==) fst))
@@ -296,12 +296,13 @@ showAssertedAmount a = showMixedAmount2 (aAmount a) <>
   maybe "" ((" = " <>) . showAmount2) (aAssertion a)
 
 
--- | Find a transactions matching the entered amount
+-- | Ask an amount, and return transactions matching the entered
+-- amount
 sugTrans :: AddT IO (AssertedAmount, Maybe Transaction)
 sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
              "Enter amount (zero for any transaction)" Nothing
   where sugTrans' answ@AA{ aAmount = iAm, aAssertion = Nothing} = do
-          accs <- S.fromList . HM.elems <$> readUser (fromBankAccounts . bankAccounts)
+          accs <- S.fromList . HM.elems <$> askAccountMap
           user <- readUser id
           let
             f user Transaction{tpostings=p1:(p2:_)} =
@@ -794,7 +795,7 @@ assignOpenBalance c old@LZ{past=(pr@EditablePosting{epAccount=sac} E.:| ps)} =
 
 showEditablePosting :: EditablePostings -> T.Text
 showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
-  renderTable (replicate 3 AlignCenter,replicate 4 AlignLeft,
+  renderTable (replicate 4 AlignCenter,replicate 4 AlignLeft,
                [ "Account",  "Amount", "Assertion", "Frequency"])
   [ let mark = if marked then "->" else "  " :: String
     in [

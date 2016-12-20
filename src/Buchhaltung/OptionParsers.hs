@@ -75,6 +75,7 @@ commands =
   command' "add"
   (Add . fmap (Username . T.pack) <$> many
     (strOption (short 'w' <> help "with partner USERNAME"
+               <> long "with"
                  <> metavar "USERNAME")))
   (progDesc "manual entry of new transactions")
 
@@ -86,8 +87,9 @@ commands =
 
   <> command' "update"
   (Update <$> versionP
-    <*> (switch $ short 'm' <> help "run match after import")
-    <*> (fmap not $ switch $ short 'n' <> help "do not fetch new transactions"))
+    <*> (switch $ short 'm' <> long "match" <> help "run match after import")
+    <*> (fmap not $ switch $ short 'n' <> long "no-fetch"
+         <> help "do not fetch new transactions"))
   (progDesc
    "fetch and import AQ Banking transactions (using \"aqbanking request\" and \"listtrans\")")
 

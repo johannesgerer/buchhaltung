@@ -263,8 +263,8 @@ data User = User
   -- ^ the account prefix for accounts receivable or payable
   -- (depending on current balance) to other users
   , aqBanking :: Maybe AQBankingConf
-  , bankAccounts :: BankAccounts
-  , ignoredAccountsOnAdd :: [Regex]
+  , bankAccounts :: Maybe BankAccounts
+  , ignoredAccountsOnAdd :: Maybe [Regex]
   , numSuggestedAccounts :: Maybe Int
   }
   deriving ( Generic, Show, FromJSON )
@@ -336,7 +336,7 @@ receivablePayable forThis other = do
 -- ** A user's bank accounts
 
 askAccountMap :: MonadReader (Options User config env) m =>  m AccountMap
-askAccountMap = readUser $ fromBankAccounts . bankAccounts
+askAccountMap = readUser $ maybe mempty fromBankAccounts . bankAccounts
 
 
 newtype BankAccounts = BankAccounts AccountMap
@@ -347,7 +347,8 @@ fromBankAccounts :: BankAccounts -> AccountMap
 fromBankAccounts (BankAccounts b) = b
 
 isIgnored :: User -> AccountName -> Bool
-isIgnored user acc = or $ g <$> ignoredAccountsOnAdd user
+isIgnored user acc = or $ maybe [] (fmap g) $
+  ignoredAccountsOnAdd user
   where g ign = R.match (rRegex ign) acc
 
 data Regex = Regex
