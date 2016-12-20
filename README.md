@@ -13,7 +13,7 @@
 
 ## Status & aim
 
-I am actively and successfully using this software in 2010 and my ledger now contains more than 12.000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
+I am actively and successfully using this software since 2010 and my ledger now contains more than 12.000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
 
 The software is in alpha phase and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shipable version, that can be used without tinkering with the source.
 
