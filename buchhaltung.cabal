@@ -1,5 +1,5 @@
 name:           buchhaltung
-version:        0.0.2
+version:        0.0.1
 Bug-Reports:      http://github.com/johannesgerer/buchhaltung/issues
 License:          MIT
 License-file:     LICENSE
@@ -10,7 +10,7 @@ Stability:        Experimental
 category:       Finance
 synopsis:      Automates most of your plain text accounting data entry in ledger format.
 description:
-   ATTENTION Use `stack build` as this package requires a developement version of `hledger`!
+   ATTENTION Use 'stack build' as this package requires a developement version of 'hledger'!
 
    Automatic import and deduplication (from CSV\/FinTS\/HBCI\/OFX), bayesian account matching, and efficient manual entry of <http://plaintextaccounting.org/ ledger> transactions.
 
