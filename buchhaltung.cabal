@@ -30,6 +30,7 @@ Extra-source-files:
                    config.yml
                    buchhaltung_autocomplete.bash
                    buchhaltung_autocomplete.zsh
+                   exchange_rates/btc_eur
 
 Custom-setup
   setup-depends:  base >= 4.0.0.0 && < 5, Cabal
