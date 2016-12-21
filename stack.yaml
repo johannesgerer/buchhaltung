@@ -9,3 +9,4 @@ packages:
   extra-dep: true
 
 resolver: nightly-2016-12-17
+pvp-bounds: both
