@@ -1,7 +1,7 @@
 ```
 (Reading journal from
-"/home/johannes/.buchhaltung/jo/import.ledger"
-"/home/johannes/.buchhaltung/jo/entered_by_jo.ledger")
+"~/.buchhaltung/jo/import.ledger"
+"~/.buchhaltung/jo/entered_by_jo.ledger")
 ...
 
 Hi jo!
@@ -19,7 +19,7 @@ Enter amount (zero for any transaction) [0]: 22.94
 1)
 2015/01/19 DANKE, IHR LIDL LASTSCHRIFT/BELAST.EC 60128709 170115204807OC1Ref. 1CA15019A2006931/20702    ; generated: by Common.fillTxn 2015-03-31 03:29:48.644423 CEST
     Assets:Accounts:BankA:Checking   -22.940 EUR
-    Accounts payable:Lidl         22.940 EUR    ; HBCI: "";"20041133";"471681700";"";"";"2015/01/19";"2015/01/19";"-22.94";"EUR";"Johannes Gerer";"DANKE, IHR LIDL";"";"LASTSCHRIFT/BELAST.EC 60128709 170115204807OC1Ref. 1CA15019A2006931/20702";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
+    Accounts payable:Lidl         22.940 EUR    ; HBCI: "";"234789183";"234789183";"";"";"2015/01/19";"2015/01/19";"-22.94";"EUR";"Johannes Gerer";"DANKE, IHR LIDL";"";"LASTSCHRIFT/BELAST.EC 60128709 170115204807OC1Ref. 1CA15019A2006931/20702";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";"";""
 
 
 {number}: use one of the above 1 transactions

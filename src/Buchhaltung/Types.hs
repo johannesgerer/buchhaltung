@@ -83,8 +83,8 @@ sourceToMap s = M.unionWith (\x y -> x <> ", " <> y)
                 (sStore s)
                 $ M.fromList $ formatToAssoc $ sFormat s
 
-formatToAssoc f = [("name", fName f)
-                  ,("version", fVersion f)]
+formatToAssoc f = [("formatName", fName f)
+                  ,("formatVersion", fVersion f)]
 
 json :: Source -> TL.Text
 json = A.encodeToLazyText
@@ -229,7 +229,7 @@ askTodoFilter = return . L.isPrefixOf =<< readConfig cTodoAccount
 
 instance FromJSON Config where
   parseJSON (Object v) = do
-    -- ^ Users are configured as list, to have a defined order
+    -- Users are configured as list, to have a defined order
     users <- parseJSON =<< v .: "users" :: A.Parser (V.Vector User)
     -- formats <- v .:? "formats" .!= mempty
     dbEx <- v .:? "dbaclExecutable" .!= "dbacl" :: Parser FilePath

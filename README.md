@@ -1,4 +1,4 @@
-# Buchhaltung  [![Build Status](https://travis-ci.org/johannesgerer/buchhaltung.svg?branch=master)](https://travis-ci.org/johannesgerer/buchhaltung)
+# Buchhaltung  [![Build Status](https://travis-ci.org/johannesgerer/buchhaltung.svg?branch=master)](https://travis-ci.org/johannesgerer/buchhaltung) [![Hackage](https://img.shields.io/hackage/v/buchhaltung.svg)](https://hackage.haskell.org/package/buchhaltung)
 
 > What advantages does he derive from the system of book-keeping by double entry! It is among the finest inventions of the human mind; every prudent master of a house should introduce it into his economy.
 > -- Johann Wolfgang von Goethe
@@ -13,7 +13,7 @@
 
 ## Status & aim
 
-I am actively and successfully using this software since 2010 and my ledger now contains more than 12.000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
+I am actively and successfully using this software since 2010 and my ledger now contains more than 12,000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
 
 The software is in alpha phase and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shipable version, that can be used without tinkering with the source.
 
@@ -109,7 +109,7 @@ The original source information will be included in the second posting's comment
 ### AqBanking
 
 ```shell
-buchhaltung fetch
+buchhaltung update
 ```
 
 This command fetches and imports all available transactions from all configured AqBanking connections.
@@ -128,6 +128,8 @@ buchhaltung match
 ```
 
 This command asks the user for the offsetting accounts of imported transactions, or more specifically, transaction whose second posting's account begins with `TODO`. 
+
+Have a look at the example output [here](match.md).
 
 The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported tansaction.  
 
@@ -233,3 +235,29 @@ generates the following transactions
     Accounts receivable:Friends:jo:jo         $ -50
     Food:Expenses                              $ 50
 ```
+
+## Getting results
+
+### Get current AqBanking account balances
+
+```shell
+buchhaltung lb
+```
+
+### Call `ledger` or `hledger`
+
+```shell
+buchhaltung ledger
+
+buchhaltung hledger
+```
+
+This calls the respective program with the `LEDGER` environment variable set to the configured `mainLedger` or `mainHledger`.
+
+### Commit the changes
+
+```shell
+buchhaltung commit -a -m'checking account ok'
+```
+
+this commits all changes to the git repository that contains the `mainLedger` file. The commit message will also contain the output of `buchhaltung lb` and `buchhaltung ledger balance --end tomorrow`.

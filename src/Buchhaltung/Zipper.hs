@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK ignore-exports #-}
 module Buchhaltung.Zipper
   (module Buchhaltung.Zipper
   , E.NonEmpty(..)

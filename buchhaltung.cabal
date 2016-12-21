@@ -1,5 +1,5 @@
 name:           buchhaltung
-version:        0.0.1
+version:        0.0.2
 Bug-Reports:      http://github.com/johannesgerer/buchhaltung/issues
 License:          MIT
 License-file:     LICENSE
@@ -10,6 +10,8 @@ Stability:        Experimental
 category:       Finance
 synopsis:      Automates most of your plain text accounting data entry in ledger format.
 description:
+   ATTENTION Use `stack build` as this package requires a developement version of `hledger`!
+
    Automatic import and deduplication (from CSV\/FinTS\/HBCI\/OFX), bayesian account matching, and efficient manual entry of <http://plaintextaccounting.org/ ledger> transactions.
 
    .
@@ -18,6 +20,19 @@ description:
 tested-with:    GHC == 7.10.1
 cabal-version:  >= 1.10
 build-type:     Custom
+
+Extra-source-files:
+                   README.md
+                   add.md
+                   add_multi_user.md
+                   match.md
+                   stack.yaml
+                   config.yml
+                   buchhaltung_autocomplete.bash
+                   buchhaltung_autocomplete.zsh
+
+Custom-setup
+  setup-depends:  base >= 4.0.0.0 && < 5, Cabal
 
 
 executable buchhaltung
@@ -47,7 +62,7 @@ executable buchhaltung
                 , ansi-wl-pprint
                 , array
                 , async
-                , base
+                , base >= 4.0.0.0 && < 5
                 , boxes
                 , bytestring
                 , lens
@@ -86,3 +101,8 @@ executable buchhaltung
                 , unordered-containers
                 , vector
                 , yaml
+
+
+Source-repository head
+  Type:     git
+  Location: http://github.com/johannesgerer/buchhaltung
