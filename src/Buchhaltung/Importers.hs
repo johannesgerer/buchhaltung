@@ -181,6 +181,8 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
 --                 v r = "\"" <> r <> "\""
 
 -- * Comdirect Germany
+--
+-- uses the old way. Do not adopt!
 
 comdirectToAqbanking :: IO ()
 comdirectToAqbanking = toAqbanking2 ';' T.getContents comdirect_header comdirect_mapping $ const True
@@ -282,6 +284,8 @@ csv_header = undefined
 comdirectVisaImporter :: Importer T.Text
 comdirectVisaImporter = Importer windoof $ csvImport comdirectVisa
   
+
+comdirectVisa :: VersionedCSV T.Text
 comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   [CSV
         { cFilter  =(/= "") . getCsv "Buchungstag" 
@@ -333,7 +337,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   
 -- * Paypal (German)
 --
--- understands exports that used the foolowing setting:
+-- understands exports under the following setting:
 --
 -- @
 -- alle guthaben relevanten Zahlungen (kommagetrennt) ohne warenkorbdetails!

@@ -116,6 +116,23 @@ buchhaltung update
 
 This command fetches and imports all available transactions from all configured AqBanking connections.
 
+In order to import an existing file in [AqBanking format](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/src/Buchhaltung-Importers.html#aqbankingImport), use:
+
+```shell
+buchhaltung import <file.csv> aqbanking
+```
+
+### Other formats
+
+For other CSV formats you have two options:
+
+1) Hack the source, which is fun and should be easy since you only need to
+copy and adapt from the other importers.
+
+2) Bring your CSV into a currently supported format. The AqBanking format works especially well
+
+In both cases, you can look at `aqbankingImporter`,
+`comdirectVisaImporter` and `paypalImporter` in [Buchhaltung/Importers.hs](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/Buchhaltung-Importers.html).
 
 ### Resolve duplicates
 
