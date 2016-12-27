@@ -3,19 +3,19 @@
 > What advantages does he derive from the system of book-keeping by double entry! It is among the finest inventions of the human mind; every prudent master of a house should introduce it into his economy.
 > -- Johann Wolfgang von Goethe
 
-*Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*), written in Haskell, helps you keep track of your finances on the commandline with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](http://plaintextaccounting.org/).
+*Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*), written in Haskell, helps you keep track of your finances on the command line with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](http://plaintextaccounting.org/).
 
 * Fetch your bank transaction directly via FinTS/HBCI/OFXDirectConnect
 * Import transactions from PayPal (can be customized to other formats)
 * Semi-automatically match transactions to accounts using Bayesian classification
 * Semi-automatic transaction entry with meaningful suggestions in keyboard-based speed mode
- * It is couples/room-mates aware: Create several transaction simultaniuously (see [Multi-user add](#multi-user-add))
+ * It is couples/room-mates aware: Create several transaction simultaneously (see [Multi-user add](#multi-user-add))
 
 ## Status & aim
 
-I am actively and successfully using this software since 2010 and my ledger now contains more than 12,000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two paypal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
+I am actively and successfully using this software since 2010 and my ledger now contains more than 12,000 transactions accurately and continuously tracking the finances of my spouse and me including four checking and two savings accounts, one credit card, two PayPal accounts, two cash wallets in EUR, bitcoin trading (both physical and on exchanges) and other currencies like USD, GPB used on trips.
 
-The software is in alpha phase and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shipable version, that can be used without tinkering with the source.
+The software is in alpha phase and I am looking for early adopters and their use cases. The aim of this stage is to agree about the functionality and customizability and produce a first shippable version, that can be used without tinkering with the source.
 
 Right now, I am using it on Linux but it should also run wherever GHC runs.
 
@@ -86,15 +86,17 @@ To initialize AqBanking after you edited the config file, you need to run:
 buchhaltung setup
 ```
 
-To clean everythink aqbanking related remove the configured `aqBanking.configDir`  and rerun the `setup` command.
+To clean everything aqbanking related remove the configured `aqBanking.configDir`  and rerun the `setup` command.
 
 ### Manual AqBanking setup
 
-Currently only the `PinTan` method is supportend (pull requests welcome). For other methods or if the AqBanking setup fails due to other reasons, you can configure AqBanking manually into the configured `aqBanking.configDir` (see for help [here](https://www.aquamaniac.de/sites/download/download.php?package=09&release=09&file=01&dummy=aqbanking4-handbook-20091231.pdf) or [here](https://wiki.gnucash.org/wiki/AqBanking), usually via `aqhbci-tool4 -C <aqBanking.configDir>`).
+Currently only the HBCI `PinTan` method is supported by the `setup` command (pull requests welcome). For other methods or if the AqBanking setup fails due to other reasons, you can configure AqBanking manually into the configured `aqBanking.configDir` (see for help [here](https://www.aquamaniac.de/sites/download/download.php?package=09&release=09&file=01&dummy=aqbanking4-handbook-20091231.pdf) or [here](https://wiki.gnucash.org/wiki/AqBanking), usually via `aqhbci-tool4 -C <aqBanking.configDir>`).
+
+So far, I have not tested the OFXDirectConnect capabilities of AqBanking (please share your experiences), but `buchhaltung` should transparently support any method offered by AqBanking.
 
 ## Importing transactions
 
-There various ways (including from PayPal CSV files) to import transactions into your configured `ledgers.imported` file. They are presented in the folling, but consult
+There various ways (including from PayPal CSV files) to import transactions into your configured `ledgers.imported` file. They are presented in the following, but consult
 
 ```shell
 buchhaltung import -h
@@ -102,7 +104,7 @@ buchhaltung import -h
 
 and the `-h` calls to its subcommands to see the currently available functionality.
 
-The accounts of the imported transactions will be taken from the configured `bankAccounts` and the offsetting balaence will be posted to an account named `TODO`, and will be replaced by [`match`](#match-accounts).
+The accounts of the imported transactions will be taken from the configured `bankAccounts` and the offsetting balance will be posted to an account named `TODO`, and will be replaced by [`match`](#match-accounts).
 
 The original source information will be included in the second posting's comment and used for learning the account mappings and to find and handle duplicates.
 
@@ -131,7 +133,7 @@ This command asks the user for the offsetting accounts of imported transactions,
 
 Have a look at the example output [here](match.md).
 
-The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported tansaction.  
+The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported transaction.  
 
 See [this](#input-and-tab-completion) information about the account input field.
 
@@ -170,7 +172,7 @@ The account input fields support TAB completion. To make this even more useful, 
 
 ### Suggested transactions
 
-After the amount is entered, the user can select a transaction whose title, date, amount and second posting's account will used to prefill an offsetting transaction. Suggestions will consist of all transactions
+After the amount is entered, the user can select a transaction whose title, date, amount and second posting's account will used to pre fill an offsetting transaction. Suggestions will consist of all transactions
 
 * whose second posting has not been cleared (i.e. marked with an asterisk in front of the account name, and
 * whose first posting's amount has the absolute value as the entered amount
@@ -178,7 +180,7 @@ After the amount is entered, the user can select a transaction whose title, date
 
 ### Suggested accounts
 
-Once the first posting's account has been entered, the editor suggests accounts for the second posting based on the frequecy of the resulting transaction's accounts in the configured `ledgers.addedByThisUser` file.
+Once the first posting's account has been entered, the editor suggests accounts for the second posting based on the frequency of the resulting transaction's accounts in the configured `ledgers.addedByThisUser` file.
 
 ### Assertions \& assignments
 
@@ -199,7 +201,7 @@ D 1,000.000 EUR
 buchhaltung add -w alice
 ```
 
-If there is more than one user configured — possibly each with their own ledger, they can be included/activated via the commandline argument `-w`. This enables you to enter a transaction where postings belong to different users. When done, a transaction for each user will be generated containing their respective postings and a balancing posting to an account prefixed with the configured `accountPrefixOthers`.
+If there is more than one user configured — possibly each with their own ledger, they can be included/activated via the command-line argument `-w`. This enables you to enter a transaction where postings belong to different users. When done, a transaction for each user will be generated containing their respective postings and a balancing posting to an account prefixed with the configured `accountPrefixOthers`.
 
 Example taken from the [output](add_multi_user.md) of the above command:
 
