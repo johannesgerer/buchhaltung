@@ -1,12 +1,16 @@
 flags: {}
 packages:
 - '.'
-- location:
-    git: https://github.com/simonmichael/hledger.git
-    commit: 282e85c6028227938457fb3b94eb333c4ba4ae65
-  subdirs:
-  - hledger-lib
-  extra-dep: true
+# - location:
+#     git: https://github.com/simonmichael/hledger.git
+#     commit: 282e85c6028227938457fb3b94eb333c4ba4ae65
+#   subdirs:
+#   - hledger-lib
+#   extra-dep: true
 
-resolver: nightly-2016-12-17
+resolver: nightly-2017-01-10
 pvp-bounds: both
+
+
+extra-deps:
+  - regex-tdfa-text-1.0.0.3

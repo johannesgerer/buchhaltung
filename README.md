@@ -38,6 +38,13 @@ Right now, I am using it on Linux but it should also run wherever GHC runs.
 * [ledger CLI tool](http://www.ledger-cli.org/) or a compatible [derivative](http://plaintextaccounting.org/) (optional)
 
   ... to **query the ledger, create balance and report statements**, [web interface](http://hledger.org/hledger-web.html), etc.
+  
+### Under the hood
+
+AqBanking or any other supported CSV source provides the raw transaction data. The `buchhaltung` binary converts this data into the ledger format and puts the original source in the comments; thereby producing selfcontained transactions without the need for an external database or log. These comments  are used later for duplicates detection and account classification.
+
+The `buchhaltung` binary internally uses the great `hledger` library. The resulting ledger files can be processed/queried with one of the `hledger` tools or any other compatible tool.
+
 
 ## Download, compile & install
 

@@ -1,5 +1,5 @@
 name:           buchhaltung
-version:        0.0.3
+version:        0.0.4
 Bug-Reports:      http://github.com/johannesgerer/buchhaltung/issues
 License:          MIT
 License-file:     LICENSE
@@ -10,8 +10,6 @@ Stability:        Experimental
 category:       Finance
 synopsis:      Automates most of your plain text accounting data entry in ledger format.
 description:
-   ATTENTION Use 'stack build' as this package requires a developement version of 'hledger'!
-
    Automatic import and deduplication (from CSV\/FinTS\/HBCI\/OFX), bayesian account matching, and efficient manual entry of <http://plaintextaccounting.org/ ledger> transactions.
 
    .
@@ -79,8 +77,8 @@ executable buchhaltung
                 , hashable
                 , haskeline
                 , hint
-                , hledger >= 1.0.0 && < 1.2
-                , hledger-lib >= 1.0.0 && < 1.2
+                , hledger >= 1.1 && < 1.2
+                , hledger-lib >= 1.1 && < 1.2
                 , lifted-base
                 , megaparsec >= 5.0.0
                 , monad-control

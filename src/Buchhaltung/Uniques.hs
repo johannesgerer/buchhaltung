@@ -57,7 +57,7 @@ addNew newTxs journal = do
 key :: Transaction -> Int -> Key
 key tx i = (compAmount $ pamount p, paccount p, tdate tx, i)
   where compAmount (Mixed am) = sort
-          $ fmap (\x -> (acommodity x, aquantity x)) am
+          $ fmap (acommodity &&& aquantity) am
         p = head $ tpostings tx
 
 -- | loop through all existing possible duplicates of a new
