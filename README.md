@@ -155,7 +155,7 @@ buchhaltung match
 
 This command asks the user for the offsetting accounts of imported transactions, or more specifically, transaction whose second posting's account begins with `TODO`. 
 
-Have a look at the example output [here](match.md).
+Have a look at the example output [here](example_output/match.md).
 
 The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported transaction.  
 
@@ -184,7 +184,7 @@ Consider frequent credit card payments to Starbucks:
 buchhaltung add
 ```
 
-This command opens a transaction editor. [Here](add.md) is an example of the output of this command.
+This command opens a transaction editor. [Here](example_output/add.md) is an example of the output of this command.
 
 The amount of manual typing is kept to a minimum by two clever suggestion mechanisms and TAB completion.
 
@@ -227,7 +227,7 @@ buchhaltung add -w alice
 
 If there is more than one user configured — possibly each with their own ledger, they can be included/activated via the command-line argument `-w`. This enables you to enter a transaction where postings belong to different users. When done, a transaction for each user will be generated containing their respective postings and a balancing posting to an account prefixed with the configured `accountPrefixOthers`.
 
-Example taken from the [output](add_multi_user.md) of the above command:
+Example taken from the [output](example_output/add_multi_user.md) of the above command:
 
 ```shell
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

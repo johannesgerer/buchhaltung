@@ -1,4 +1,4 @@
-```
+```shell
 (Reading journal from
 "~/.buchhaltung/jo/import.ledger")
 ...
