@@ -10,7 +10,7 @@ _buchhaltung()
         CMDLINE=(${CMDLINE[@]} --bash-completion-word $arg)
     done
 
-    COMPREPLY=( $(/usr/bin/buchhaltung "${CMDLINE[@]}") )
+    COMPREPLY=( $(/home/johannes/.local/bin/buchhaltung "${CMDLINE[@]}") )
 }
 
 complete -o filenames -F _buchhaltung buchhaltung
