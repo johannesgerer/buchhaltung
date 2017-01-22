@@ -79,7 +79,7 @@ stack install
 * The `config.yml` file provides excessive comments.
 * This readme documents most functionality.
 * Every command and subcommand shows a help message when invoked with `-h`.
-* Read the haddock documentation and source code on [Hackage](https://hackage.haskell.org/package/hashtables).
+* Read the haddock documentation and source code on [Hackage](https://hackage.haskell.org/package/buchhaltung).
 * Open an issue.
 * Write an email.
 
