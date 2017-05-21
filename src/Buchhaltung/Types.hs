@@ -467,6 +467,7 @@ data Action = Add { aPartners :: [Username] }
 data ImportAction = Paypal PaypalUsername
                   | AQBankingImport
                   | ComdirectVisa { comdirectVisaBlz :: T.Text }
+                  | BarclaycardUs
   deriving (Show, Generic, NFData)
 
 

@@ -139,6 +139,12 @@ importOpts =
   <>
   commandGroup "Available FORMATS"
   <>
+  command' "barclaycardus"
+  (pure BarclaycardUs)
+  (progDesc $ concat ["import from BarclaycardUs web export. "
+                     ,"versions: May 2017"])
+
+  <>
   command' "comdirectVisa"
   (ComdirectVisa . T.pack <$> strArgument
     (metavar "BLZ"))

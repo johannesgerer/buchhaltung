@@ -9,6 +9,7 @@ module Buchhaltung.Importers
   paypalImporter
   , aqbankingImporter
   , comdirectVisaImporter 
+  , barclaycardusImporter 
   , module Buchhaltung.Import
   , getBayesFields
   )
@@ -278,6 +279,33 @@ description_list t cols r = map fst $ sorted r
 
                         -- transformation = map snd mapping'
 csv_header = undefined
+
+-- * Barclaycard US Visa transaction logs
+
+barclaycardusImporter :: Importer T.Text
+barclaycardusImporter = Importer windoof $ csvImport barclaycardus
+
+barclaycardus :: VersionedCSV T.Text
+barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017")
+  [CSV
+        { cFilter  =(/= "") . getCsv "Transaction Date" 
+        , cAmount = textstrip . comma . (<> " USD") . getCsv "Amount"
+        , cDate = parseDatumUs . getCsv "Transaction Date"
+        , cVDate = Just . parseDatumUs . getCsv "Transaction Date"
+        , cBank = const
+        , cAccount = const $ const "Barclaycard"
+        , cSeparator = ','
+        , cHeader = ["Transaction Date"
+                    ,"Description"
+                    ,"Category"
+                    ,"Amount"
+                    ]
+        , cDescription = desc
+        , cBayes = desc
+        , cVersion = "May 2017"
+        }
+  ]
+  where desc = ["Description"]
 
 -- * Comdirect Visa Statements
 

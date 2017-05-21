@@ -323,6 +323,9 @@ windoof = Just $ \h -> hSetEncoding h latin1
 parseDatum :: T.Text -> Day
 parseDatum = parseTimeOrError True defaultTimeLocale "%d.%m.%Y" . T.unpack
 
+parseDatumUs :: T.Text -> Day
+parseDatumUs = parseTimeOrError True defaultTimeLocale "%m/%d/%Y" . T.unpack
+
 -- | retrieval function
 type Getter a = MyRecord -> a
 
