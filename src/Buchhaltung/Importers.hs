@@ -289,10 +289,10 @@ barclaycardus :: VersionedCSV T.Text
 barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017")
   [CSV
         { cFilter  =(/= "") . getCsv "Transaction Date" 
-        , cAmount = textstrip . comma . (<> " USD") . getCsv "Amount"
+        , cAmount = textstrip . (<> " USD") . getCsv "Amount"
         , cDate = parseDatumUs . getCsv "Transaction Date"
         , cVDate = Just . parseDatumUs . getCsv "Transaction Date"
-        , cBank = const
+        , cBank = const $ const "Barclays Bank Delaware"
         , cAccount = const $ const "Barclaycard"
         , cSeparator = ','
         , cHeader = ["Transaction Date"
