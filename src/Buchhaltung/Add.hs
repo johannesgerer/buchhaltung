@@ -307,7 +307,7 @@ sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
           let
             f user Transaction{tpostings=p1:(p2:_)} =
               -- the first posting's account is part of the accounts
-              -- automaticcaly handled by csv2ledger
+              -- automatically handled by csv2ledger
               (paccount p1 `S.member` accs)
               -- the first amount of the first posting matched the entered
               -- amount in absolute values

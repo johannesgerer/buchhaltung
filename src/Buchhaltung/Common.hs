@@ -22,7 +22,7 @@ import           Buchhaltung.Types
 import           Buchhaltung.Utils
 import           Control.Applicative ((<$>))
 import           Control.Arrow
-import           Control.Lens hiding (noneOf, Getter, (<&>))
+import           Control.Lens (Traversal', Lens', lens)
 import           Control.Monad.RWS.Strict
 import           Control.Monad.Writer
 import qualified Data.Aeson as A
@@ -320,24 +320,24 @@ windoof = Just $ \h -> hSetEncoding h latin1
                        >> hSetNewlineMode h universalNewlineMode
 
 
-parseDatum :: T.Text -> Day
-parseDatum = parseTimeOrError True defaultTimeLocale "%d.%m.%Y" . T.unpack
+parseDate :: String -> T.Text -> Day
+parseDate format = parseTimeOrError True defaultTimeLocale format . T.unpack
 
-parseDatumUs :: T.Text -> Day
-parseDatumUs = parseTimeOrError True defaultTimeLocale "%m/%d/%Y" . T.unpack
-
+parseDateDE = parseDate "%d.%m.%Y"
+parseDateUS = parseDate "%m/%d/%Y"
+  
 -- | retrieval function
 type Getter a = MyRecord -> a
 
-data CsvImport a = CSV
+data CsvImport env = CSV
   { cFilter :: MyRecord -> Bool
   -- ^ should this csv line be processed?
   , cAmount :: Getter T.Text
   -- ^ Amount parsable by 'mamoumtp\''
   , cDate :: Getter Day
   , cVDate :: Getter (Maybe Day)
-  , cBank :: a -> Getter T.Text
-  , cAccount :: a -> Getter T.Text
+  , cBank :: env -> Getter T.Text
+  , cAccount :: env -> Getter T.Text
   , cHeader      :: [T.Text]
   , cBayes       :: [T.Text]
   , cDescription :: [T.Text]
@@ -354,8 +354,8 @@ toVersionedCSV
 toVersionedCSV format headers = sequence $ (,) format $ fromListUnique $
   (cVersion . cRaw &&& id) . checkRawCSV format <$> headers
 
-type VersionedCSV a = forall m. MonadError Msg m
-                      => m (SFormat DefaultVersion, M.Map Version (CheckedCsvImport a))
+type VersionedCSV env = forall m. MonadError Msg m
+                      => m (SFormat DefaultVersion, M.Map Version (CheckedCsvImport env))
                       -- ^ (format with default version, _)
 
 data DefaultVersion = DefaultVersion { fromDefaultVersion :: Version }

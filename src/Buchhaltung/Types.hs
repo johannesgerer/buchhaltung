@@ -166,6 +166,9 @@ data Options user config env = Options
   }
   deriving (Show, Generic, NFData)
 
+-- instance Functor (Options user config) where
+--   fmap f o = o{oEnv = f $ oEnv o}
+
 type FullOptions = Options User Config
 type RawOptions = Options (Maybe Username) ()
 
@@ -338,13 +341,9 @@ receivablePayable forThis other = do
 askAccountMap :: MonadReader (Options User config env) m =>  m AccountMap
 askAccountMap = readUser $ maybe mempty fromBankAccounts . bankAccounts
 
-
-newtype BankAccounts = BankAccounts AccountMap
+newtype BankAccounts = BankAccounts
+  { fromBankAccounts :: AccountMap }
   deriving (Generic, Default, Show)
-
-
-fromBankAccounts :: BankAccounts -> AccountMap
-fromBankAccounts (BankAccounts b) = b
 
 isIgnored :: User -> AccountName -> Bool
 isIgnored user acc = or $ maybe [] (fmap g) $

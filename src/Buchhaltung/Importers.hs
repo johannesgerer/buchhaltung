@@ -53,16 +53,18 @@ headerInfo g v = do
     (printf "Version is not defined for format '%s%'" $ fName format)
     M.lookup (fromMaybe (fromDefaultVersion $ fVersion format) v) map
 
--- csvImport
---   :: MonadError Msg m
---   => CsvImport
---   -> T.Text -> m [ImportedEntry]
-csvImport
-  :: (MonadError Msg m
-     ,MonadReader (Options user config (a, Maybe Version)) m)
-  => VersionedCSV a -> T.Text -> m [ImportedEntry]
-csvImport versionedCsv csv = do
+-- | Data type for preprocessing and meta-data extraction of CSV files
+type Preprocessor env1 env2 = (T.Text, env1) -> (T.Text, env2)
+
+csvImport = csvImportPreprossed id
+  
+csvImportPreprossed :: Preprocessor env1 env2
+                    -> VersionedCSV env2
+                    -> T.Text
+                    -> CommonM (env1, Maybe Version) [ImportedEntry]
+csvImportPreprossed pp versionedCsv csv1 = do
   (env, version) <- reader oEnv
+  let (csv2, env2) = pp (csv1, env)
   (form, g@CSV{cHeader=expected,
      cDescription = desc,
      cVersion = version }) <- headerInfo versionedCsv version
@@ -70,14 +72,14 @@ csvImport versionedCsv csv = do
           { ieT = genTrans date (vdate =<< cVDate g x)
                   (getCsvConcat desc x)
           , ieSource  = fromMapToSource form x
-          , iePostings = (AccountId (cBank g env $ x) (cAccount g env $ x)
+          , iePostings = (AccountId (cBank g env2 $ x) (cAccount g env2 $ x)
                          , cAmount g x)
           }
           where
             vdate vd = if date == vd then Nothing
                        else Just vd
             date  = cDate g x
-      (header, rows) = parseCsv (cSeparator g) . TL.fromStrict $ csv
+      (header, rows) = parseCsv (cSeparator g) . TL.fromStrict $ csv2
   if expected == header then
     return $ fmap toEntry $ filter (cFilter g) rows
     else throwError $ L.unlines
@@ -157,7 +159,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
 --   where y a b = head b==""
 --         f :: [T.Text] -> ImportedEntry
 --         f l@(dat:(_:(des:(am:rest)))) = ImportedEntry{
---            ieT = genTrans (parseDatum $ dat <> "2014") Nothing (L.unwords s)
+--            ieT = genTrans (parseDateDE $ dat <> "2014") Nothing (L.unwords s)
 --            ,ieSource  = v $ T.intercalate (v $ T.singleton hbci_sep) l
 --            ,iePostings=("Aktiva:Konten:Giro", a <> " EUR")
 --            }
@@ -172,7 +174,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
 --   where y a b = head b==""
 --         f :: [T.Text] -> ImportedEntry
 --         f l@(dat:(des:(am:rest))) = ImportedEntry{
---            ieT = genTrans (parseDatum $ dat <> "2013") Nothing (L.unwords s)
+--            ieT = genTrans (parseDateDE $ dat <> "2013") Nothing (L.unwords s)
 --            ,ieSource  = v $ T.intercalate (v $ T.singleton hbci_sep) l
 --            ,iePostings=("Aktiva:Konten:Giro", a <> " EUR")
 --            }
@@ -290,8 +292,8 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
   [CSV
         { cFilter  =(/= "") . getCsv "Transaction Date" 
         , cAmount = textstrip . (<> " USD") . getCsv "Amount"
-        , cDate = parseDatumUs . getCsv "Transaction Date"
-        , cVDate = Just . parseDatumUs . getCsv "Transaction Date"
+        , cDate = parseDateUS . getCsv "Transaction Date"
+        , cVDate = Just . parseDateUS . getCsv "Transaction Date"
         , cBank = const $ const "Barclays Bank Delaware"
         , cAccount = const $ const "Barclaycard"
         , cSeparator = ','
@@ -318,8 +320,8 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   [CSV
         { cFilter  =(/= "") . getCsv "Buchungstag" 
         , cAmount = textstrip . comma . (<> " EUR") . getCsv "Ausgang"
-        , cDate = parseDatum . getCsv "Buchungstag"
-        , cVDate = Just . parseDatum . getCsv "Valuta"
+        , cDate = parseDateDE . getCsv "Buchungstag"
+        , cVDate = Just . parseDateDE . getCsv "Valuta"
         , cBank = const
         , cAccount = const $ const "Visa"
         , cSeparator = ','
@@ -339,8 +341,8 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   , CSV
         { cFilter  =(/= "") . getCsv "Buchungstag" 
         , cAmount = comma . (<> " EUR") . getCsv "Umsatz in EUR"
-        , cDate = parseDatum . getCsv "Buchungstag"
-        , cVDate = Just . parseDatum . getCsv "Umsatztag"
+        , cDate = parseDateDE . getCsv "Buchungstag"
+        , cVDate = Just . parseDateDE . getCsv "Umsatztag"
         , cBank = const
         , cAccount = const $ const "Visa"
         , cSeparator = ','
@@ -380,7 +382,7 @@ paypalImport =
         { cFilter  = (/= "Storniert") . getCsv " Status"
         , cAmount = comma . getCsvConcat [ " Netto"
                                          , " Währung"]
-        , cDate = parseDatum . getCsv "Datum"
+        , cDate = parseDateDE . getCsv "Datum"
         , cVDate = const Nothing
         , cBank = const $ const "Paypal"
         , cAccount = const
