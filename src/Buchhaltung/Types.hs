@@ -92,7 +92,7 @@ json = A.encodeToLazyText
 instance FromJSON Source where
   parseJSON (Object v) = do
     Source <$>
-      (SFormat <$> v .: "formatName" <*>  v .: "formatVersion")
+      (SFormat <$> v .: "name" <*>  v .: "version")
       <*> v.: "store"
 
 instance ToJSON Source where
