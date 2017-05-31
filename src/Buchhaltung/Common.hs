@@ -271,6 +271,14 @@ parseCsv sep = either error ((fmap T.decodeUtf8 . V.toList)
                { decDelimiter = fromIntegral $ ord sep }
                . encodeUtf8
 
+getCsvCreditDebit :: T.Text -> T.Text -> MyRecord -> T.Text
+getCsvCreditDebit creditColumn debitColumn record = if hasValue creditValue 
+                                                    then "-" `T.append` creditValue 
+                                                    else debitValue where
+  hasValue = T.any isDigit
+  creditValue = getCsv creditColumn record
+  debitValue = getCsv debitColumn record
+
 getCsvConcat
   :: [T.Text] -> MyRecord -> T.Text
 getCsvConcat x record = L.unwords $ flip getCsv record <$> x

@@ -10,6 +10,7 @@ module Buchhaltung.Importers
   , aqbankingImporter
   , comdirectVisaImporter 
   , barclaycardusImporter 
+  , pncbankImporter 
   , module Buchhaltung.Import
   , getBayesFields
   )
@@ -282,7 +283,36 @@ description_list t cols r = map fst $ sorted r
                         -- transformation = map snd mapping'
 csv_header = undefined
 
--- * Barclaycard US Visa transaction logs
+-- * PNC Bank USA transaction logs
+
+pncbankImporter :: Importer T.Text
+pncbankImporter = Importer windoof $ csvImport pncbank
+
+pncbank :: VersionedCSV T.Text
+pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
+  [CSV
+        { cFilter  =(/= "") . getCsv "Date" 
+        , cAmount = textstrip . (T.replace "$" "") . (T.replace "," "") . (<> " USD") . getCsvCreditDebit "Withdrawals" "Deposits"
+        , cDate = parseDateUS . getCsv "Date"
+        , cVDate = Just . parseDateUS . getCsv "Date"
+        , cBank = const $ const "PNC Bank"
+        , cAccount = const
+        , cSeparator = ','
+        , cHeader = ["Date"
+                    ,"Description"
+                    ,"Withdrawals"
+                    ,"Deposits"
+                    ,"Balance"
+                    ]
+        , cDescription = desc
+        , cBayes = desc
+        , cVersion = "May 2017"
+        }
+  ]
+  where desc = ["Description"]
+
+
+-- * Barclaycard US transaction logs
 
 barclaycardusImporter :: Importer ()
 barclaycardusImporter = Importer windoof $ csvImportPreprossed barclaycardPreprocessor barclaycardus
@@ -718,7 +748,7 @@ defaultFields
   :: MonadError Msg m =>
      m (M.Map (SFormat ()) (M.Map Version [T.Text]))
 defaultFields = fromListUnique . fmap (first $ (() <$))
-  =<< sequence [toBayes paypalImport, toBayes aqbankingImport, toBayes barclaycardus]
+  =<< sequence [toBayes paypalImport, toBayes aqbankingImport, toBayes barclaycardus, toBayes pncbank]
 
 getBayesFields
   :: MonadError Msg m

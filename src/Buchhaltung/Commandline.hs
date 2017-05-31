@@ -50,6 +50,8 @@ run (Import version file action) options = runImport action
           importReadWrite barclaycardusImporter (options' ()) file
         runImport (ComdirectVisa blz) =
           importReadWrite comdirectVisaImporter (options' blz) file
+        runImport (Pncbank accountId) =
+          importReadWrite pncbankImporter (options' accountId) file
         runImport AQBankingImport =
           importReadWrite aqbankingImporter (options' ()) file
         options' env = options{oEnv = (env, version)}
