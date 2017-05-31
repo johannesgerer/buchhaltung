@@ -11,7 +11,7 @@ users:
       - "Cash"
     bankAccounts:
       Barclays Bank Delaware:
-        Barclaycard: "Liabilities:Credit Cards:Barclaycard"
+        1234: "Liabilities:Credit Cards:Barclaycard"
     aqBanking:
       configDir: nick/aqbanking
       connections: []
