@@ -10,6 +10,8 @@ users:
       - "Transfer"
       - "Cash"
     bankAccounts:
+      PNC Bank:
+        checking: "Assets:Checking:PNC"
       Barclays Bank Delaware:
         1234: "Liabilities:Credit Cards:Barclaycard"
     aqBanking:
