@@ -711,7 +711,7 @@ defaultFields
   :: MonadError Msg m =>
      m (M.Map (SFormat ()) (M.Map Version [T.Text]))
 defaultFields = fromListUnique . fmap (first $ (() <$))
-  =<< sequence [toBayes paypalImport, toBayes aqbankingImport]
+  =<< sequence [toBayes paypalImport, toBayes aqbankingImport, toBayes barclaycardus]
 
 getBayesFields
   :: MonadError Msg m
