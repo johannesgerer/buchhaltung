@@ -1,0 +1,17 @@
+users:
+  - name: nick
+    ledgers:
+      mainLedger:      nick/ledger.ledger
+      imported:        nick/import.ledger
+      addedByThisUser: nick/entered_by_nick.ledger
+      addedByOthers:   nick/entered_by_others.ledger
+    accountPrefixOthers: Accounts receivable:Friends
+    ignoredAccountsOnAdd:
+      - "Transfer"
+      - "Cash"
+    bankAccounts:
+      Barclays Bank Delaware:
+        Barclaycard: "Liabilities:Credit Cards:Barclaycard"
+    aqBanking:
+      configDir: nick/aqbanking
+      connections: []
