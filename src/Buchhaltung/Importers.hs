@@ -284,18 +284,25 @@ csv_header = undefined
 
 -- * Barclaycard US Visa transaction logs
 
-barclaycardusImporter :: Importer T.Text
-barclaycardusImporter = Importer windoof $ csvImport barclaycardus
+barclaycardusImporter :: Importer ()
+barclaycardusImporter = Importer windoof $ csvImportPreprossed barclaycardPreprocessor barclaycardus
 
-barclaycardus :: VersionedCSV T.Text
+barclaycardPreprocessor :: Preprocessor () AccountId
+barclaycardPreprocessor (wholeFile, ()) = (T.unlines body, account) where
+  ((bank : accountLine : _ : _ : []), body) = splitAt 4 $ T.lines wholeFile
+  account = AccountId bank $ fromMaybe e (T.stripPrefix accountPrefix accountLine)
+  accountPrefix = "Account Number: XXXXXXXXXXXX"
+  e = error "Expected second line of file to begin with prefix " `T.append` accountPrefix
+
+barclaycardus :: VersionedCSV AccountId
 barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017")
   [CSV
         { cFilter  =(/= "") . getCsv "Transaction Date" 
         , cAmount = textstrip . (<> " USD") . getCsv "Amount"
         , cDate = parseDateUS . getCsv "Transaction Date"
         , cVDate = Just . parseDateUS . getCsv "Transaction Date"
-        , cBank = const $ const "Barclays Bank Delaware"
-        , cAccount = const $ const "Barclaycard"
+        , cBank = const . aBank
+        , cAccount = const . aAccount
         , cSeparator = ','
         , cHeader = ["Transaction Date"
                     ,"Description"
