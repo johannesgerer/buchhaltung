@@ -62,7 +62,7 @@ printSource = P.render . table [25,35] ["Field", "Value"] .
   (\(x,z) -> [x,z]) . unzip . M.toList . sourceToMap
 
 mainLoop :: String -> MatchT IO ()
-mainLoop i = do
+mainLoop msg = do
   zip <- gets $ snd
   let tx = present zip
   liftIO $ do
@@ -70,25 +70,25 @@ mainLoop i = do
     printf "Current Transaction: %d, Remaining: %d\n"
       (length $ past zip )
       $ length $ future zip
-    putStr i
+    putStr msg
   account <- myAskAccount =<< suggestAccount tx -- 
   let
+    next = modify (second fwd) >> mainLoop (fwdMsg zip)
+    prev = modify (second back) >> mainLoop (backMsg zip)
+    fwdMsg (LZ _ []) =  "<< DONE! Use 'save' to exit >>\n\n"
+    fwdMsg _ = ""
+    backMsg (LZ (_ :| []) _) =  "<< This is the first transaction >>\n\n"
+    backMsg _ = ""
     g "save" = void $ saveChanges $ changeTransaction
                $ mapMaybe updateAccountName $ integrate zip
-    g "<" = prev zip
-    g ">" = next zip
+    g "<" = prev
+    g ">" = next
     g _   = do
       modify $ first $ S.insert account
       learn [(account, return tx)]
-      modify $ second $ fwd . modifyPresent (fmap $ const $ Just account)
-      next zip
+      modify $ second $ modifyPresent (fmap $ const $ Just account)
+      next
   g account
-  where
-    next (LZ _ []) = mainLoop "<< DONE! Use 'save' to exit >>\n\n"
-    next z = modify (second $ const fwd z) >> mainLoop ""
-    prev (LZ (_ :| []) _) =
-      mainLoop "<< This is the first transaction >>\n\n"
-    prev z = modify (second $ const back z) >> mainLoop ""
 
 histfsuf :: String
 histfsuf =   "learn"
@@ -147,13 +147,11 @@ type Update = WithSource (Maybe AccountName)
 
 -- | Group all transactions with source into those that already have
 -- an account and those that starting with 'cTodoAccount'
---
--- returns `Nothing` if there are no todo transactions
 groupByAccount
   :: MonadReader (Options user Config env) m =>
      Journal
      -> m (Maybe ( [(AccountName, NonEmpty (WithSource ()))]
-                 , NonEmpty Update))
+                 , NonEmpty (WithSource (Maybe a))))
 groupByAccount j = do
   tag <- askTag
   todoFilt <- askTodoFilter
@@ -161,10 +159,7 @@ groupByAccount j = do
       f s = if todoFilt ac then Right $ fmap (const Nothing) <$> s
             else Left (ac, s)
         where ac = acc $ N.head s
-  return
-    -- combine all transactions with different todo accounts
-    $ traverse (fmap S.sconcat . nonEmpty)
-    $ partitionEithers $ fmap f
+  return $ traverse (fmap S.sconcat . nonEmpty) $ partitionEithers $ fmap f
     $ N.groupBy ((==) `on` acc)
     $ sortBy (comparing acc) $ rights $ extractSource tag
     <$> jtxns j 
