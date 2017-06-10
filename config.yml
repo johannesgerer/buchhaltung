@@ -22,6 +22,10 @@ users:
     # optional: account prefix used when 'add'ing transactions for other users
     accountPrefixOthers: Accounts receivable:Friends
 
+    # regex matchind accounts whose should not be suggested when 'match'ing
+    ignoredAccountsOnMatch:
+      - "Old"
+
     # regex matchind accounts whose transactions should not be suggested when 'add'ing
     ignoredAccountsOnAdd:
       - "Transfer"
