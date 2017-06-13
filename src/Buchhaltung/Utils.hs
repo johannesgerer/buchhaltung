@@ -53,11 +53,6 @@ instance Monoid a => Monoid (IO a) where
 #endif
 
   
-doesPathExist :: FilePath -> IO Bool
-doesPathExist = fmap getAny . (a . doesFileExist <> a . doesDirectoryExist)
-  where a = fmap Any 
-
-
 -- * Ported from 'System.IO.Temp' to work with 'MonadBaseControl'
   
 withSystemTempFile template action = liftIO getTemporaryDirectory >>= \tmpDir -> withTempFile tmpDir template action
