@@ -327,7 +327,7 @@ sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
               --     toMyP t p2{pamount=negate $ pamount p2})
 
               -- ignore certain accounts
-              && (not $ isIgnored user $ paccount p2)
+              && (not $ isIgnored (ignoredAccountsOnAdd user) $ paccount p2)
             f _ _ = False
               -- s :: S.Set MyPosting
               -- s = error "doch benutzt?" -- Set.fromList $ toMyPs =<< jtxns j

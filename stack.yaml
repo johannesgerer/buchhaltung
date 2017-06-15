@@ -8,9 +8,5 @@ packages:
 #   - hledger-lib
 #   extra-dep: true
 
-resolver: nightly-2017-01-10
+resolver: lts-8.18
 pvp-bounds: both
-
-
-extra-deps:
-  - regex-tdfa-text-1.0.0.3

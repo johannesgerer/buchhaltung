@@ -268,6 +268,7 @@ data User = User
   , aqBanking :: Maybe AQBankingConf
   , bankAccounts :: Maybe BankAccounts
   , ignoredAccountsOnAdd :: Maybe [Regex]
+  , ignoredAccountsOnMatch :: Maybe [Regex]
   , numSuggestedAccounts :: Maybe Int
   }
   deriving ( Generic, Show, FromJSON )
@@ -345,9 +346,9 @@ newtype BankAccounts = BankAccounts
   { fromBankAccounts :: AccountMap }
   deriving (Generic, Default, Show)
 
-isIgnored :: User -> AccountName -> Bool
-isIgnored user acc = or $ maybe [] (fmap g) $
-  ignoredAccountsOnAdd user
+
+isIgnored :: Maybe [Regex] -> AccountName -> Bool
+isIgnored regexes acc = or $ maybe [] (fmap g) $ regexes
   where g ign = R.match (rRegex ign) acc
 
 data Regex = Regex

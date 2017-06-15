@@ -75,8 +75,8 @@ library
                 , hashable
                 , haskeline
                 , hint
-                , hledger >= 1.1 && < 1.2
-                , hledger-lib >= 1.1 && < 1.2
+                , hledger >= 1.1
+                , hledger-lib >= 1.1
                 , lifted-base
                 , megaparsec >= 5.0.0
                 , monad-control
@@ -142,8 +142,8 @@ executable buchhaltung
                 , hashable
                 , haskeline
                 , hint
-                , hledger >= 1.1 && < 1.2
-                , hledger-lib >= 1.1 && < 1.2
+                , hledger >= 1.1
+                , hledger-lib >= 1.1
                 , lifted-base
                 , megaparsec >= 5.0.0
                 , monad-control

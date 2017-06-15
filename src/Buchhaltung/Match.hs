@@ -146,20 +146,28 @@ accountCompletion cc = completeWord Nothing
 type Update = WithSource (Maybe AccountName)
 
 -- | Group all transactions with source into those that already have
--- an account and those that starting with 'cTodoAccount'
+--  an account (ignoring those in 'ignoredAccountsOnMatch') and those
+--  that start with 'cTodoAccount'
+--
+-- returns `Nothing` if there are no todo transactions
 groupByAccount
-  :: MonadReader (Options user Config env) m =>
+  :: MonadReader (Options User Config env) m =>
      Journal
      -> m (Maybe ( [(AccountName, NonEmpty (WithSource ()))]
-                 , NonEmpty (WithSource (Maybe a))))
+                 , NonEmpty Update))
 groupByAccount j = do
+  ignored <- readUser ignoredAccountsOnMatch
   tag <- askTag
   todoFilt <- askTodoFilter
   let acc = paccount . wPosting
       f s = if todoFilt ac then Right $ fmap (const Nothing) <$> s
             else Left (ac, s)
         where ac = acc $ N.head s
-  return $ traverse (fmap S.sconcat . nonEmpty) $ partitionEithers $ fmap f
+  return
+    -- combine all transactions with different todo accounts
+    $ traverse (fmap S.sconcat . nonEmpty)
+    $ first (filter $ not . isIgnored ignored . fst)
+    $ partitionEithers $ fmap f
     $ N.groupBy ((==) `on` acc)
     $ sortBy (comparing acc) $ rights $ extractSource tag
     <$> jtxns j 
