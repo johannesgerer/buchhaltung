@@ -1,3 +1,4 @@
+# enter the containig dir and run with 'buchhaltung -p . import barclaycardus.csv barclaycardus'
 users:
   - name: nick
     ledgers:

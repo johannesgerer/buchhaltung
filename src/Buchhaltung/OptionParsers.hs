@@ -165,7 +165,7 @@ importOpts =
   command' "pncbank"
   (Pncbank . T.pack <$> strArgument
     (help "PNC account identifier or number (as configured in 'bankAccounts')"
-      <> metavar "PNCBANK_ID"))
+      <> metavar "ACCOUNT_ID"))
   (progDesc $ concat ["import from PNC Bank web export. "
                      ,"versions: May 2017"])
 

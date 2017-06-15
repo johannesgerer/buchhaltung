@@ -8,9 +8,9 @@ module Buchhaltung.Importers
 (
   paypalImporter
   , aqbankingImporter
-  , comdirectVisaImporter 
-  , barclaycardusImporter 
-  , pncbankImporter 
+  , comdirectVisaImporter
+  , barclaycardusImporter
+  , pncbankImporter
   , module Buchhaltung.Import
   , getBayesFields
   )
@@ -55,17 +55,18 @@ headerInfo g v = do
     M.lookup (fromMaybe (fromDefaultVersion $ fVersion format) v) map
 
 -- | Data type for preprocessing and meta-data extraction of CSV files
-type Preprocessor env1 env2 = (T.Text, env1) -> (T.Text, env2)
+type Preprocessor env1 env2 = forall m. MonadError Msg m
+                      => (T.Text, env1) -> m (T.Text, env2)
 
-csvImport = csvImportPreprossed id
-  
-csvImportPreprossed :: Preprocessor env1 env2
+csvImport = csvImportPreprocessed return
+
+csvImportPreprocessed :: Preprocessor env1 env2
                     -> VersionedCSV env2
                     -> T.Text
                     -> CommonM (env1, Maybe Version) [ImportedEntry]
-csvImportPreprossed pp versionedCsv csv1 = do
+csvImportPreprocessed pp versionedCsv csv1 = do
   (env, version) <- reader oEnv
-  let (csv2, env2) = pp (csv1, env)
+  (csv2, env2) <- pp (csv1, env)
   (form, g@CSV{cHeader=expected,
      cDescription = desc,
      cVersion = version }) <- headerInfo versionedCsv version
@@ -152,7 +153,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
                [ ("remoteName", ["1"])
                , ("purpose",  fshow <$> [1..11])
                , ("category", fshow <$> [1..7])]
-  
+
 -- * Postbank Germany Kontoauszüge (from PDF with @pdftotext@)
 
 -- fromPostbankPDF2 :: T.Text -> [ImportedEntry]
@@ -291,8 +292,9 @@ pncbankImporter = Importer windoof $ csvImport pncbank
 pncbank :: VersionedCSV T.Text
 pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
   [CSV
-        { cFilter  =(/= "") . getCsv "Date" 
-        , cAmount = textstrip . (T.replace "$" "") . (T.replace "," "") . (<> " USD") . getCsvCreditDebit "Withdrawals" "Deposits"
+        { cFilter  =(/= "") . getCsv "Date"
+        , cAmount = textstrip . (T.replace "$" "") . (T.replace "," "") . (<> " USD") .
+                    getCsvCreditDebit "Withdrawals" "Deposits"
         , cDate = parseDateUS . getCsv "Date"
         , cVDate = Just . parseDateUS . getCsv "Date"
         , cBank = const $ const "PNC Bank"
@@ -315,19 +317,22 @@ pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
 -- * Barclaycard US transaction logs
 
 barclaycardusImporter :: Importer ()
-barclaycardusImporter = Importer windoof $ csvImportPreprossed barclaycardPreprocessor barclaycardus
+barclaycardusImporter = Importer windoof $ csvImportPreprocessed barclaycardPreprocessor barclaycardus
 
 barclaycardPreprocessor :: Preprocessor () AccountId
-barclaycardPreprocessor (wholeFile, ()) = (T.unlines body, account) where
-  ((bank : accountLine : _ : _ : []), body) = splitAt 4 $ T.lines wholeFile
-  account = AccountId bank $ fromMaybe e (T.stripPrefix accountPrefix accountLine)
-  accountPrefix = "Account Number: XXXXXXXXXXXX"
-  e = error "Expected second line of file to begin with prefix " `T.append` accountPrefix
+barclaycardPreprocessor (wholeFile, _) =
+    maybe e (return . (,) (T.unlines body) . AccountId bank . T.dropWhile (== 'X'))
+    $ T.stripPrefix accountPrefix accountLine
+  where
+    (bank : accountLine : _ : _ : body) = T.lines wholeFile
+    accountPrefix = "Account Number: "
+    e = throwError $
+      "Expected second line of file to begin with prefix " `T.append` accountPrefix
 
 barclaycardus :: VersionedCSV AccountId
 barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017")
   [CSV
-        { cFilter  =(/= "") . getCsv "Transaction Date" 
+        { cFilter  =(/= "") . getCsv "Transaction Date"
         , cAmount = textstrip . (<> " USD") . getCsv "Amount"
         , cDate = parseDateUS . getCsv "Transaction Date"
         , cVDate = Just . parseDateUS . getCsv "Transaction Date"
@@ -340,7 +345,7 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
                     ,"Amount"
                     ]
         , cDescription = desc
-        , cBayes = desc
+        , cBayes = "Category" : desc
         , cVersion = "May 2017"
         }
   ]
@@ -350,12 +355,12 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
 
 comdirectVisaImporter :: Importer T.Text
 comdirectVisaImporter = Importer windoof $ csvImport comdirectVisa
-  
+
 
 comdirectVisa :: VersionedCSV T.Text
 comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   [CSV
-        { cFilter  =(/= "") . getCsv "Buchungstag" 
+        { cFilter  =(/= "") . getCsv "Buchungstag"
         , cAmount = textstrip . comma . (<> " EUR") . getCsv "Ausgang"
         , cDate = parseDateDE . getCsv "Buchungstag"
         , cVDate = Just . parseDateDE . getCsv "Valuta"
@@ -376,7 +381,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
          -- hand extracted from @pdftotext -layout@
         }
   , CSV
-        { cFilter  =(/= "") . getCsv "Buchungstag" 
+        { cFilter  =(/= "") . getCsv "Buchungstag"
         , cAmount = comma . (<> " EUR") . getCsv "Umsatz in EUR"
         , cDate = parseDateDE . getCsv "Buchungstag"
         , cVDate = Just . parseDateDE . getCsv "Umsatztag"
@@ -401,7 +406,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
         desc2 = ["Vorgang"
                 ,"Buchungstext"
                 ]
-  
+
 -- * Paypal (German)
 --
 -- understands exports under the following setting:
@@ -414,7 +419,7 @@ paypalImporter :: Importer T.Text
 paypalImporter = Importer windoof $ csvImport paypalImport
 
 paypalImport :: VersionedCSV T.Text
-paypalImport = 
+paypalImport =
   let base = CSV
         { cFilter  = (/= "Storniert") . getCsv " Status"
         , cAmount = comma . getCsvConcat [ " Netto"
@@ -743,17 +748,23 @@ toBayes
   => VersionedCSV a
   -> m (SFormat DefaultVersion, M.Map Version [T.Text])
 toBayes = fmap (second $ fmap $ cBayes . cRaw)
-  
+
+-- create a map that associates each format with a map that associates
+-- each version with a list of fields
 defaultFields
   :: MonadError Msg m =>
      m (M.Map (SFormat ()) (M.Map Version [T.Text]))
 defaultFields = fromListUnique . fmap (first $ (() <$))
   =<< sequence [toBayes paypalImport, toBayes aqbankingImport, toBayes barclaycardus, toBayes pncbank]
 
+-- extract the values of all available bayes fields of a given
+-- source.
 getBayesFields
   :: MonadError Msg m
   => Source -> m [T.Text]
 getBayesFields source = do
+  -- extract the correct bayes fields that correspond to the source's
+  -- format and version.
   fields <- lookupErrM "Version has to be configured" M.lookup
             (fVersion format)
             =<< lookupErrM "Format has to be configured" M.lookup
