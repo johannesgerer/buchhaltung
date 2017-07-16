@@ -35,7 +35,7 @@ import qualified Text.PrettyPrint.Boxes as P
 import           Text.Printf
   
 type MatchT m = RWST (FullOptions FilePath) ()
-                (S.Set AccountName, Zipper Update) (ErrorT m)
+                (M.Map AccountName Bool, Zipper Update) (ErrorT m)
   -- ^ R: temporaray dbacl path
   --
   --   W: Set of learned accounts
@@ -49,7 +49,7 @@ match options j = maybe (liftIO $ print "No unmatched transactions")
   where
     g (done, todos) = void $ runRWST (learn done >> mainLoop "")
                       options
-                      (S.fromList $ fst <$> done, differentiate todos) :: ErrorT IO ()
+                      (mempty, differentiate todos) :: ErrorT IO ()
 
 -- | Apply the first matching 'Todo'
 updateAccountName :: Update -> Maybe (Transaction, Transaction)
@@ -84,7 +84,6 @@ mainLoop msg = do
     g "<" = prev
     g ">" = next
     g _   = do
-      modify $ first $ S.insert account
       learn [(account, return tx)]
       modify $ second $ modifyPresent (fmap $ const $ Just account)
       next
@@ -93,49 +92,63 @@ mainLoop msg = do
 histfsuf :: String
 histfsuf =   "learn"
 
-data Default = Default  { display :: T.Text, defAcc :: AccountName }
+-- | Data type describing the suggested or 'default' account when
+-- asking the user for account input
+data Default = Default  { prefixed :: T.Text, defAcc :: AccountName }
   
 suggestAccount :: Update -> MatchT IO (Maybe Default)
 suggestAccount tx = do
-  accs <- getAccountList
+  accs <- getAccountList $ id
   args <- dbaclProcC <$> mapM tmp accs
   text <- bayesLine tx
   bin <- readConfig cDbaclExecutable
   let
-    g [] = return Nothing
-    g accounts = do
-      (code, output, _) <- liftIO $ readProcessWithExitCode bin args text
+    g = if null accs || T.null text then return Nothing
+        else do
+      (code, output, _) <-
+        liftIO $ readProcessWithExitCode bin args $ T.unpack text
       case code of
         ExitSuccess -> return Nothing
         ExitFailure x ->
           return $ Just $ Default info sa
-          where sa = accounts !! (x-1)
+          where sa = accs !! (x-1)
                 info :: T.Text
                 info = either fshow (text . lookup sa)
                   (dbacl_parse accs output)
                 text Nothing = "failed\t\t"
                 text (Just te) = "uncertainty: " <> T.pack te <> "\t"
-  maybe (g accs) (return . Just . Default "manual:\t\t\t") $ wInfo tx
+  maybe g (return . Just . Default "manual:\t\t\t") $ wInfo tx
   
-bayesLine :: Monad m => WithSource a -> MatchT m String
-bayesLine w = T.unpack . T.unwords <$> getBayesFields (wSource w)
+bayesLine :: Monad m => WithSource a -> MatchT m T.Text
+bayesLine w = T.strip . T.unwords <$> getBayesFields (wSource w)
 
 learn :: [(AccountName, NonEmpty (WithSource a))]
       -> MatchT IO ()
-learn pairs = liftIO . runConcurrently . mconcat =<< mapM learn' pairs
+learn pairs = do
+  accs <- liftIO . runConcurrently . sequenceA =<< mapM learn' pairs
+  forM_ accs $ \(k,v) -> modify $ first $ M.insertWith (\a b -> a) k v
   where learn' (name,txs) = do 
           bin <- readConfig cDbaclExecutable
-          text <- L.unlines <$> mapM bayesLine (N.toList txs)
+          text <- (L.unlines . filter (not . T.null)) <$>
+                    mapM bayesLine (N.toList txs)
           file <- tmp name
-          return $ Concurrently $ do
-            -- let text = if text'=="" then "\n" else text' PROBLEM-bayes_fields
-            L.putStrLn $ "Learning: " <> name
-            -- putStrLn $ "\n\n"++ (intercalate "\n\n" $ info <$> todos)
-            -- putStrLn text
-            out <- readProcess bin (dbaclProc file) text
-            appendFile (file <> "_raw" ) $ text <> "\n\n" <> out
-            L.putStrLn $ "Done:     " <> name
-
+          let action = if T.null text then return (name, False)
+                       else do
+                -- let text = if text'=="" then "\n" else text' PROBLEM-bayes_fields
+                L.putStrLn $ "Learning: " <> name
+                -- putStrLn $ "\n\n"++ (intercalate "\n\n" $ info <$> todos)
+                -- putStrLn text
+                let texts = T.unpack text
+                (code, out, err) <- readProcessWithExitCode bin (dbaclProc file) texts
+                appendFile (file <> "_raw" ) $ texts <> "\n\n" <>
+                  out <> "\n\nStd error:\n" <> err
+                case code of
+                  ExitSuccess ->
+                    L.putStrLn $   "Done:     " <> name
+                  ExitFailure x ->
+                    L.putStrLn $ "Failed:   " <> name <> "\nwith Code "<> fshow x
+                return (name, code == ExitSuccess)
+          return $ Concurrently $ action
 accountCompletion :: [String] -> CompletionFunc IO
 accountCompletion cc = completeWord Nothing
                         "" -- don't break words on whitespace, since account names
@@ -173,13 +186,13 @@ groupByAccount j = do
     <$> jtxns j 
 
 myAskAccount :: Maybe Default -> MatchT IO AccountName
-myAskAccount acc = getAccountList >>= \accs -> 
+myAskAccount acc = getAccountList (const True) >>= \accs -> 
   liftIO $ askAccount accs (defAcc <$> acc) (Just histfsuf) prompt
   where prompt = Right $ maybe "" showdef acc <> "\n[<, >, save, RET]:\t"
         showdef (Default d a) = d <> (revAccount2 a) :: T.Text
 
-getAccountList :: Monad m => MatchT m [AccountName]
-getAccountList = gets $ S.toList . fst
+getAccountList :: Monad m => (Bool -> Bool) -> MatchT m [AccountName]
+getAccountList f = gets $ M.keys . M.filter f . fst
 
 tmp :: Monad m => T.Text -> MatchT m FilePath
 tmp name = reader $ (</> T.unpack name) . oEnv 

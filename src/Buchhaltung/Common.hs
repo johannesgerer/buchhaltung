@@ -107,7 +107,7 @@ dbacl_parse :: [AccountName]
             -> String
             -> Either ParseError [(AccountName,String)]
 dbacl_parse accounts = fmap conv . parse (dbacl_parser sorted) ""
-  where conv = map (liftM2 (,) fst (L.unwords . snd))
+  where conv = fmap $ second L.unwords
         sorted = sortBy (flip $ comparing T.length) $ accounts
 
 dbacl_parser :: [AccountName] -> Parsec String () [(AccountName, [String])]
