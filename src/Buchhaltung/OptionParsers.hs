@@ -152,6 +152,15 @@ importOpts =
                      ,"versions: manuell, export"])
 
   <>
+  command' "monefy"
+  (fmap Monefy $ MonefySettings . T.pack <$> strArgument
+    (help "monefy instance or phone name (as configured in 'bankAccounts')"
+      <> metavar "INSTANCE")
+    <*> switch
+    (short 's' <> help "Set this flag to use the following format for accounts: 'Monefy Category Account::<category>'"))
+  (progDesc $ concat ["import from Monefy CSV export. "
+                     ,"versions: 2017"])
+  <>
   command' "paypal"
   (Paypal . T.pack <$> strArgument
     (help "paypal username (as configured in 'bankAccounts')"

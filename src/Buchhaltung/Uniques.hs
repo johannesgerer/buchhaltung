@@ -27,35 +27,49 @@ import qualified Text.PrettyPrint.Boxes as P
 import           Text.Printf
 
 -- | The monad stack
-type M r m = ContT r (RWST () () (M.Map Key Entry) m)
+type M r m = ContT r (RWST () () (M.Map KeyIx (Aged Entry)) m)
+  
+data Aged a = Aged { getAge :: Age
+                   , unAged :: a
+                   }
+  deriving Show
+
+data Age = Old | New
+  deriving (Show, Eq)
 
 -- | the key that is used to compare transactions. The Int is a
 -- counter, to ensure there are no actual duplicates in the
--- map.
+-- map and to be able to update entries.
 --
--- Instead duplicates are found by extraction of a key range using
+-- Duplicates are then found by extraction of a key range using
 -- 'M.split'. See 'findDuplicates'.
-type Key = ([(CommoditySymbol,Quantity)], AccountName, Day, Int)
+type Key = ([(CommoditySymbol,Quantity)], AccountName, Day)
+type KeyIx = (Key, Int) 
 
-addNew :: (MonadIO m, MonadReader (Options user Config env) m)
+
+-- | Takes a list of new entries, removes duplicates or updates
+-- existing transactions and adds new entries.
+addNewEntriesToJournal :: (MonadIO m, MonadReader (Options user Config env) m)
        => [FilledEntry]
           -- ^ new candidates including entries already existing in
           -- journal possible duplicates
        -> Journal
        -> m [Entry]
-addNew newTxs journal = do
+addNewEntriesToJournal newTxs journal = do
   tag <- askTag
-  let g i tx = (key tx i
-               , ImportedEntry tx () $ wSource <$> extractSource tag tx)
-  fmap (M.elems . fst)
+  let toKeyVal i tx = ((deriveKey tx, i)
+                      , Aged Old $ ImportedEntry tx () $
+                        wSource <$> extractSource tag tx)
+  fmap (fmap unAged . M.elems . fst)
     <$> execRWST (evalContT $ callCC $ \exit -> zipWithM_
                    (loop exit $ length newTxs) [1..] newTxs)
     () $ M.fromList
-    $ zipWith g [1..] (jtxns journal)
+    $ zipWith toKeyVal [1..] (jtxns journal)
 
-
-key :: Transaction -> Int -> Key
-key tx i = (compAmount $ pamount p, paccount p, tdate tx, i)
+ 
+-- | Derive a key from a transaction and an index
+deriveKey :: Transaction -> Key
+deriveKey tx = (compAmount $ pamount p, paccount p, tdate tx)
   where compAmount (Mixed am) = sort
           $ fmap (acommodity &&& aquantity) am
         p = head $ tpostings tx
@@ -66,24 +80,28 @@ loop :: (MonadIO m, MonadReader (Options user Config env) m)
      => (() -> M r m ())
      -> Int -> Int -> FilledEntry -> M r m ()
 loop exit totalTx iTx new = do
-  new' <- gets $ \old -> (key (ieT new) $ M.size old + 1, new)
-  dups <- findDuplicates new'
   let msg = format ("Transaction: "%F.d%" of "%F.d%" new\n") iTx totalTx
-  checkOrAsk exit new' msg
-    $ sortBy (flip $ comparing snd)
-    $ (id &&& g) <$> dups
-    where g (_, y) = negate . on
+      key = deriveKey $ ieT new
+  dups <- findDuplicates key
+  checkOrAsk exit (key, new) msg
+    $ sortBy (flip $ comparing snd) $ (id &&& distance) <$> dups
+    where distance (_, y) =
+            -- careful: the negate is fmapped over the Maybe value
+            -- which changes the relative order between Nothing and
+            -- Justs.
+            negate . on
             (restrictedDamerauLevenshteinDistance defaultEditCosts)
             (TL.unpack . json)  (ieSource new)
-            <$> (eitherToMaybe $ ieSource y)
+            <$> (eitherToMaybe $ ieSource $ unAged y)
 
 eitherToMaybe :: Either b a -> Maybe a
 eitherToMaybe = either (const Nothing) Just
 
-findDuplicates :: Monad m => (Key, FilledEntry) -> M r m [(Key,Entry)]
-findDuplicates ((ams,acc,day,ix), _) = lift $ gets $ \old ->
-   let later = snd $ M.split (ams,acc,day,0) old in
-   M.toList $ fst $ M.split (ams,acc,addDays 1 day,ix) later
+-- | Find all duplicates for a given key
+findDuplicates :: Monad m => Key -> M r m [(KeyIx,Aged Entry)]
+findDuplicates key@(ams,acc,day) = lift $ gets $ \old ->
+   let later = snd $ M.split (key,0) old in
+   M.toList $ fst $ M.split ((ams,acc,addDays 1 day),0) later
 
 -- | check single new entry against a list of conflict
 -- candidates, and insert new entry (if list is empty), or keep old
@@ -93,14 +111,18 @@ checkOrAsk :: (MonadIO m, MonadReader (Options user Config env) m)
            => (() -> M r m ())
            -> (Key, FilledEntry)
            -> TL.Text -- ^ message
-           -> [((Key,Entry), Maybe Int)] -> M r m ()
-checkOrAsk _ new _ []  = do
-  modify $ uncurry M.insert $ second fromFilled new
+           -> [((KeyIx, Aged Entry), Maybe Int)] -> M r m ()
+checkOrAsk _ (newKey, new) _ []  = do
+  newIx <- gets $ \old -> M.size old + 1
+  modify $ uncurry M.insert $ ((newKey, newIx), Aged New $ fromFilled new)
   liftIO $ T.putStrLn "\nSaved new transaction.\n"
-checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
-  if cost == Just 0 then return () -- do nothing, i.e. use old unchanged
+checkOrAsk exit new msg (( (oldKey, oldEntry), cost):remaining) = do
+  liftIO $ print $ cost
+  if getAge oldEntry == Old && cost == Just 0
+    then return () -- do nothing, i.e. use old unchanged
     else if False && cost > Just ( - 98)
-            && on (==) (tdate.ieT) oldEntry (fromFilled $ snd new) then do
+            && on (==) (tdate.ieT) (unAged oldEntry) (fromFilled $ snd new)
+         then do
       -- liftIO $ do print (fst new) >> print (oldKey)
       --             print (tdate.ieT.snd $ new) >> print (tdate.ieT $ oldEntry)
       --             print (ieSource.snd $ new) >> print (ieSource $ oldEntry)
@@ -126,23 +148,24 @@ checkOrAsk exit new msg (( (oldKey,oldEntry), cost):remaining) = do
   where
     overwriteOldSource = lift $ do
           tag <- lift $ askTag
-          modify $ M.adjust (applyChanges tag new oldKey) oldKey
+          modify $ M.adjust (applyChanges tag new $ fst oldKey) oldKey
           liftIO $ T.putStrLn "\nUpdated duplicate's source.\n"
 
-prettyPrint :: Maybe Int -> FilledEntry -> Entry -> TL.Text -- ^ Message
+prettyPrint :: Maybe Int -> FilledEntry -> Aged Entry -> TL.Text -- ^ Message
             -> Int -- ^ Remaining
             -> T.Text
-prettyPrint cost new old msg remain =
-      let union2 = f . second unzip . unzip
-                          . M.toList . union
-          union old = M.mergeWithKey g
+prettyPrint cost new (Aged age old) msg remain =
+      let union2 = f . second unzip . unzip . M.toList $ M.mergeWithKey g
             (fmap $ flip (,) "<empty>") (fmap $ (,) "<empty>")
-             old $ sourceToMap $ ieSource new
+            (either (const mempty) sourceToMap $ oldSource)
+            $ sourceToMap $ ieSource new
           g _ x y | x == y = Just $ (x, "")
                   | True   = Just $ (x, y)
           f (k,(old,new)) = T.pack $ P.render
             $ table [20, 25, 25] header [k, old, new]
-          header = ["Field", "Old", "New"]
+          oldName Old = "Old"
+          oldName New = "Imported earlier"
+          header = ["Field", oldName age, "New"]
           oldSource = ieSource old
           showError (Left x) = [""
                                ,"Error retrieving old transaction's source:"
@@ -152,7 +175,7 @@ prettyPrint cost new old msg remain =
           def f (Just x) = f x
         in
         L.unlines $
-        [ union2 . either (const mempty) sourceToMap $ oldSource ]
+        [ union2 ]
         ++ [ sformat
              ("changes: "%F.s%"/"%F.s%"\n"%F.t%"Remaining existing duplicates: "%F.d)
              (def (show . negate) cost)
@@ -164,12 +187,13 @@ prettyPrint cost new old msg remain =
 
 
 applyChanges :: ImportTag -> (Key, FilledEntry)
-             -> Key -> Entry -> Entry
-applyChanges tag ((ams2,acc2,day2,_),newEntry)
-  (ams1, acc1, _, _) oldEntry =
+             -> Key -> Aged Entry -> Aged Entry
+applyChanges tag ((ams2,acc2,day2), newEntry)
+  (ams1, acc1, _) oldEntry =
   if (ams2,acc2) /= (ams1,acc1) then
     error $ unlines ["Change not supported: "
                     , show newEntry
                     , show oldEntry]
- else oldEntry{ieT= (injectSource tag (ieSource newEntry)
-                      $ ieT oldEntry){tdate = day2}}
+ else Aged New $ (unAged oldEntry){
+    ieT= (injectSource tag (ieSource newEntry)
+           $ ieT $ unAged oldEntry){tdate = day2} }

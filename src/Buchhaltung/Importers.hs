@@ -9,6 +9,7 @@ module Buchhaltung.Importers
   paypalImporter
   , aqbankingImporter
   , comdirectVisaImporter
+  , monefyImporter
   , barclaycardusImporter
   , pncbankImporter
   , module Buchhaltung.Import
@@ -72,10 +73,13 @@ csvImportPreprocessed pp versionedCsv csv1 = do
      cVersion = version }) <- headerInfo versionedCsv version
   let toEntry x = ImportedEntry
           { ieT = genTrans date (vdate =<< cVDate g x)
-                  (getCsvConcat desc x)
+                  (getCsvConcatDescription desc x)
           , ieSource  = fromMapToSource form x
-          , iePostings = (AccountId (cBank g env2 $ x) (cAccount g env2 $ x)
-                         , cAmount g x)
+          , iePostings = 
+            (\p -> (AccountId (cBank g env2 x) (cAccount p x)
+                   , cAmount p x
+                   , ($ x) <$> cSuffix p
+                   , cNegate p x)) . ($ env2) <$> cPostings g
           }
           where
             vdate vd = if date == vd then Nothing
@@ -105,12 +109,17 @@ aqbankingImport :: VersionedCSV env
 aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
   [CSV
     { cFilter  = const True
-    , cAmount = getCsvConcat [ "value_value"
-                             , "value_currency"]
     , cDate = readdate . getCsv "date"
     , cVDate = Just . readdate . getCsv "valutadate"
     , cBank = const $ getCsv "localBankCode"
-    , cAccount = const $ getCsv "localAccountNumber"
+    , cPostings =
+        [ const CsvPosting
+          { cAccount = getCsv "localAccountNumber"
+          , cAmount = getCsvConcat [ "value_value"
+                                   , "value_currency"]
+          , cSuffix = Nothing
+          , cNegate = const False
+          }]
     , cSeparator = ';'
     , cVersion= "4"
     , cHeader = ["transactionId"
@@ -145,7 +154,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
                 ,"category5"
                 ,"category6"
                 ,"category7"]
-    , cDescription = desc
+    , cDescription = Field <$> desc
     , cBayes = ["remoteBankCode","remoteAccountNumber"]
                ++ desc
     }]
@@ -293,12 +302,18 @@ pncbank :: VersionedCSV T.Text
 pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
   [CSV
         { cFilter  =(/= "") . getCsv "Date"
-        , cAmount = textstrip . (T.replace "$" "") . (T.replace "," "") . (<> " USD") .
-                    getCsvCreditDebit "Withdrawals" "Deposits"
         , cDate = parseDateUS . getCsv "Date"
         , cVDate = Just . parseDateUS . getCsv "Date"
         , cBank = const $ const "PNC Bank"
-        , cAccount = const
+        , cPostings =
+          [ \env -> CsvPosting
+            { cAccount = const env
+            , cAmount = textstrip . (T.replace "$" "") .
+                        (T.replace "," "") . (<> " USD") .
+                        getCsvCreditDebit "Withdrawals" "Deposits"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
         , cSeparator = ','
         , cHeader = ["Date"
                     ,"Description"
@@ -306,7 +321,7 @@ pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
                     ,"Deposits"
                     ,"Balance"
                     ]
-        , cDescription = desc
+        , cDescription = Field <$> desc
         , cBayes = desc
         , cVersion = "May 2017"
         }
@@ -333,23 +348,84 @@ barclaycardus :: VersionedCSV AccountId
 barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017")
   [CSV
         { cFilter  =(/= "") . getCsv "Transaction Date"
-        , cAmount = textstrip . (<> " USD") . getCsv "Amount"
         , cDate = parseDateUS . getCsv "Transaction Date"
         , cVDate = Just . parseDateUS . getCsv "Transaction Date"
         , cBank = const . aBank
-        , cAccount = const . aAccount
+        , cPostings =
+          [ \env -> CsvPosting
+            { cAccount = const $ aAccount env
+            , cAmount = textstrip . (<> " USD") . getCsv "Amount"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
         , cSeparator = ','
         , cHeader = ["Transaction Date"
                     ,"Description"
                     ,"Category"
                     ,"Amount"
                     ]
-        , cDescription = desc
+        , cDescription = Field <$> desc
         , cBayes = "Category" : desc
         , cVersion = "May 2017"
         }
   ]
   where desc = ["Description"]
+
+-- * Monefy Csv
+  
+monefyImporter :: Importer MonefySettings
+monefyImporter = Importer Nothing $ csvImportPreprocessed unambiguous monefy
+
+unambiguous (t,e) = return (L.unlines (h2:rest
+                                      -- (T.replace "ü" "ue" <$> rest)
+                                      ), e)
+  where _:rest = L.lines t
+        h2 = "date,account,category,amount,currency,converted amount,currency2,description"
+
+monefy :: VersionedCSV MonefySettings
+monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
+  [CSV
+        { cFilter  = const True
+        , cDate = parseDate "%d/%m/%Y" . getCsv "date"
+        , cVDate = const Nothing
+        , cBank = const . monefyInstallation
+        , cPostings =
+          [ const CsvPosting
+            { cAccount = getCsv "account"
+            , cAmount = amt
+            , cSuffix = Nothing
+            , cNegate = const False
+            }
+          , \env -> let suf = monefyCategorySuffix env in CsvPosting 
+            { cAccount = if suf then const "Monefy Category Account"
+                         else getCsv "category"
+            , cAmount = amt
+            , cSuffix = if suf then Just $ getCsv "category"
+                        else Nothing
+            , cNegate = const True
+            }
+          ]
+        , cSeparator = ','
+        , cHeader = ["date"
+                    ,"account"
+                    ,"category"
+                    ,"amount"
+                    ,"currency"
+                    ,"converted amount"
+                    ,"currency2"
+                    ,"description"
+                    ]
+        , cDescription = [Const "Monefy", Field "description"]
+        , cBayes = []
+        , cVersion = "2017"
+        }
+  ]
+  where amt = (\a b -> textstrip $ a <> " " <> b)
+              <$> getCsv "amount" <*> getCsv "currency"
+
+
+
+
 
 -- * Comdirect Visa Statements
 
@@ -361,11 +437,16 @@ comdirectVisa :: VersionedCSV T.Text
 comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   [CSV
         { cFilter  =(/= "") . getCsv "Buchungstag"
-        , cAmount = textstrip . comma . (<> " EUR") . getCsv "Ausgang"
         , cDate = parseDateDE . getCsv "Buchungstag"
         , cVDate = Just . parseDateDE . getCsv "Valuta"
         , cBank = const
-        , cAccount = const $ const "Visa"
+        , cPostings =
+          [ const CsvPosting
+            { cAccount = const "Visa"
+            , cAmount = textstrip . comma . (<> " EUR") . getCsv "Ausgang"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
         , cSeparator = ','
         , cHeader = ["Buchungstag"
                     ,"Vorgang"
@@ -375,18 +456,23 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
                     ,"Referenz"
                     ,"Buchungstext2"
                     ]
-        , cDescription = desc
+        , cDescription = Field <$> desc
         , cBayes = desc
         , cVersion = "manuell"
          -- hand extracted from @pdftotext -layout@
         }
   , CSV
         { cFilter  =(/= "") . getCsv "Buchungstag"
-        , cAmount = comma . (<> " EUR") . getCsv "Umsatz in EUR"
         , cDate = parseDateDE . getCsv "Buchungstag"
         , cVDate = Just . parseDateDE . getCsv "Umsatztag"
         , cBank = const
-        , cAccount = const $ const "Visa"
+        , cPostings =
+          [ const CsvPosting
+            { cAccount = const "Visa"
+            , cAmount = comma . (<> " EUR") . getCsv "Umsatz in EUR"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
         , cSeparator = ','
         , cHeader = ["Buchungstag"
                     ,"Umsatztag"
@@ -394,7 +480,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
                     ,"Referenz"
                     ,"Buchungstext"
                     ,"Umsatz in EUR"]
-        , cDescription = desc2
+        , cDescription = Field <$> desc2
         , cBayes = desc2
         , cVersion = "export"
         }
@@ -422,18 +508,32 @@ paypalImport :: VersionedCSV T.Text
 paypalImport =
   let base = CSV
         { cFilter  = (/= "Storniert") . getCsv " Status"
-        , cAmount = comma . getCsvConcat [ " Netto"
-                                         , " Währung"]
         , cDate = parseDateDE . getCsv "Datum"
         , cVDate = const Nothing
         , cBank = const $ const "Paypal"
-        , cAccount = const
+        , cPostings =
+          [ \env -> CsvPosting
+            { cAccount = const env
+            , cAmount = comma . getCsvConcat [ " Netto"
+                                             , " Währung"]
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
         , cSeparator = ','
         , cVersion = "undefined"
         , cHeader = []
         , cBayes = ["undefined"]
-        , cDescription = ["undefined"]
-        } in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2016")
+        , cDescription = [Field "undefined"]
+        }
+      desc = Field <$> [" Name"
+                       ," Verwendungszweck"
+                       ," Art"
+                       ," Zeit"]
+      desc2 = Field <$> [" Name"
+                       ," Artikelbezeichnung"
+                       ," Typ"
+                       ," Zeit"]
+  in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2016")
   [base { cVersion = "2016"
         , cHeader = ["Datum"
                     ," Zeit"
@@ -499,10 +599,7 @@ paypalImport =
                    ," Land"
                    ," Telefonnummer"
                    ]
-        , cDescription = [" Name"
-                         ," Artikelbezeichnung"
-                         ," Typ"
-                         ," Zeit"]
+        , cDescription = desc2
         }
     ,base { cVersion = "2014"
          , cHeader = ["Datum"
@@ -569,10 +666,7 @@ paypalImport =
                     ," Land"
                     ," Telefonnummer der Kontaktperson"
                     ]
-         , cDescription = [" Name"
-                          ," Verwendungszweck"
-                          ," Art"
-                          ," Zeit"]
+        , cDescription = desc
          }
   , base { cVersion = "2013"
          , cHeader = ["Datum"
@@ -640,10 +734,7 @@ paypalImport =
                     ," Land"
                     ," Telefonnummer der Kontaktperson"
                     ]
-         , cDescription = [" Name"
-                          ," Verwendungszweck"
-                          ," Art"
-                          ," Zeit"]
+        , cDescription = desc
          }]
 
 -- * other stuff
@@ -755,7 +846,11 @@ defaultFields
   :: MonadError Msg m =>
      m (M.Map (SFormat ()) (M.Map Version [T.Text]))
 defaultFields = fromListUnique . fmap (first $ (() <$))
-  =<< sequence [toBayes paypalImport, toBayes aqbankingImport, toBayes barclaycardus, toBayes pncbank]
+  =<< sequence [toBayes paypalImport
+               ,toBayes aqbankingImport
+               ,toBayes barclaycardus
+               ,toBayes pncbank
+               ,toBayes monefy]
 
 -- extract the values of all available bayes fields of a given
 -- source.

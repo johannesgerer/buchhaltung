@@ -468,6 +468,12 @@ data ImportAction = Paypal PaypalUsername
                   | ComdirectVisa { comdirectVisaBlz :: T.Text }
                   | BarclaycardUs
                   | Pncbank { pncAccountIdentifier :: T.Text }
+                  | Monefy MonefySettings
+  deriving (Show, Generic, NFData)
+
+data MonefySettings = MonefySettings
+  { monefyInstallation :: T.Text
+  , monefyCategorySuffix :: Bool }
   deriving (Show, Generic, NFData)
 
 

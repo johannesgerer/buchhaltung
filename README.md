@@ -6,7 +6,7 @@
 *Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*), written in Haskell, helps you keep track of your finances on the command line with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](http://plaintextaccounting.org/).
 
 * Fetch your bank transaction directly via FinTS/HBCI/OFXDirectConnect
-* Import transactions from PayPal (can be customized to other formats)
+* Import transactions from PayPal, Barclaycard Visa, comdirect Visa, and Monefy expense tracker app, (or define your own formats)
 * Semi-automatically match transactions to accounts using Bayesian classification
 * Semi-automatic transaction entry with meaningful suggestions in keyboard-based speed mode
  * It is couples/room-mates aware: Create several transaction simultaneously (see [Multi-user add](#multi-user-add))
@@ -133,13 +133,17 @@ buchhaltung import <file.csv> aqbanking
 
 For other CSV formats you have two options:
 
-1) Hack the source, which is fun and should be easy since you only need to
-copy and adapt from the other importers.
+1) Use the importers for PayPal, Barclaycard Visa, comdirect Visa, and Monefy expense tracker app.
 
 2) Bring your CSV into a currently supported format. The AqBanking format works especially well
 
-In both cases, you can look at `aqbankingImporter`,
-`comdirectVisaImporter` and `paypalImporter` in [Buchhaltung/Importers.hs](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/Buchhaltung-Importers.html).
+3) Hack the source, which is fun and should be easy since you only need to
+copy and adapt from the other importers.
+
+You can look at `aqbankingImporter`, `comdirectVisaImporter` and
+`paypalImporter`
+in
+[Buchhaltung/Importers.hs](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/Buchhaltung-Importers.html).
 
 ### Resolve duplicates
 

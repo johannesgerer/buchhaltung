@@ -38,6 +38,7 @@ import qualified Data.List.NonEmpty as E
 import qualified Data.ListLike as L
 import qualified Data.ListLike.String as L
 import qualified Data.Map.Strict as M
+import           Data.Maybe
 import           Data.Ord
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -49,8 +50,8 @@ import           Data.Time.Calendar
 import           Data.Time.Format
 import           Data.Traversable (traverse)
 import qualified Data.Vector as V
-import           Hledger.Data hiding (at)
 import           Hledger (textstrip)
+import           Hledger.Data hiding (at)
 import           Hledger.Query
 import           Hledger.Read
 import           Hledger.Reports (defreportopts)
@@ -240,11 +241,10 @@ extractSource tag' tx =
 
 injectSource ::  ImportTag -> Source -> Transaction -> Transaction
 injectSource tag source t = t
-  {tpostings = [ p1
-               , p2{pcomment =
-                    commentPrefix tag <> TL.toStrict (json source)
-                   }]}
-  where [p1,p2] = tpostings t
+  {tpostings = reverse $ p1{pcomment =
+                            commentPrefix tag <> TL.toStrict (json source)
+                           } : rest}
+  where (p1 : rest) = reverse $ tpostings t
 
 -- instance MonadReader (Options user Config env) m => ReaderM user env m
 
@@ -279,9 +279,14 @@ getCsvCreditDebit creditColumn debitColumn record = if hasValue creditValue
   creditValue = getCsv creditColumn record
   debitValue = getCsv debitColumn record
 
-getCsvConcat
-  :: [T.Text] -> MyRecord -> T.Text
-getCsvConcat x record = L.unwords $ flip getCsv record <$> x
+getCsvConcat :: [T.Text] -> MyRecord -> T.Text
+getCsvConcat = getCsvConcatDescription . fmap Field
+  
+getCsvConcatDescription
+  :: [Description] -> MyRecord -> T.Text
+getCsvConcatDescription x record = L.unwords $ g <$> x
+  where g (Field f) = getCsv f record
+        g (Const t) = t
 
 getCsv :: T.Text -> MyRecord -> T.Text
 getCsv c x = lookupErrD (show (HM.keys x)) HM.lookup c x
@@ -295,7 +300,8 @@ data ImportedEntry' a s = ImportedEntry {
   ,ieSource :: s -- ^ source to check for duplicates and for Bayesian matching
   } deriving Show
 
-type ImportedEntry =  ImportedEntry' (AccountId, T.Text) Source
+type ImportedEntry =  ImportedEntry'
+  [(AccountId, T.Text, Maybe T.Text, Bool)] Source
   -- ^ postings of [acount,amount]: only ImportedEntry with one
   -- posting is currently implemented in the statists functionality of
   -- Add.hs (See PROBLEM1) as well in the duplicates algorithm in 'addNew'
@@ -337,21 +343,31 @@ parseDateUS = parseDate "%m/%d/%Y"
 -- | retrieval function
 type Getter a = MyRecord -> a
 
+data CsvPostingImport = CsvPosting
+  { cAccount :: Getter T.Text
+  , cAmount  :: Getter T.Text
+  , cSuffix  :: Maybe (Getter T.Text)
+  , cNegate  :: Getter Bool
+  -- ^ Amount parsable by 'mamoumtp\''
+  }
+
 data CsvImport env = CSV
   { cFilter :: MyRecord -> Bool
   -- ^ should this csv line be processed?
-  , cAmount :: Getter T.Text
-  -- ^ Amount parsable by 'mamoumtp\''
   , cDate :: Getter Day
   , cVDate :: Getter (Maybe Day)
   , cBank :: env -> Getter T.Text
-  , cAccount :: env -> Getter T.Text
   , cHeader      :: [T.Text]
   , cBayes       :: [T.Text]
-  , cDescription :: [T.Text]
+  , cDescription :: [Description]
   , cVersion     :: Version
   , cSeparator :: Char
+  , cPostings :: [env -> CsvPostingImport]
   }
+
+data Description = Field T.Text | Const T.Text
+toField (Field t) = Just t
+toField _ = Nothing
 
 data CheckedCsvImport a = UnsafeCSV { cRaw :: CsvImport a }
   -- deriving (Show)
@@ -375,7 +391,8 @@ checkRawCSV format rh =
        ("format '%s', version '%s': The configured header misses the following "
         ++ "fields required for Bayes or Description:\n%s")
        (fName format) (cVersion rh) $ unlines $ uncurry (printf "%s: %s") <$> missing
-  where [head, bayes, desc] = S.fromList  . ($rh) <$> [cHeader, cBayes, cDescription]
+  where [head, bayes, desc] = S.fromList  . ($rh) <$>
+          [cHeader, cBayes, mapMaybe toField . cDescription]
         missing =
           concatMap (uncurry zip <&> repeat *** (fmap T.unpack . toList . flip S.difference head))
                   [("cBayes", bayes), ("cDescription", desc)] :: [(String, String)]
