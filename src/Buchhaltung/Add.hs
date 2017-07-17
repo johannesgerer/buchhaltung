@@ -569,6 +569,12 @@ dateandcodep = do d <- smartdate
                   MP.eof
                   return (d, maybe "" T.pack c)
 
+myAskAccount
+  :: Journal
+     -> Maybe AccountName
+     -> Maybe String
+     -> Either T.Text T.Text
+     -> IO AccountName
 myAskAccount j = askAccount completionList
   where completionList = nub $ sort [ paccount p | t <- jtxns j
                                       , p <- tpostings t]
@@ -743,6 +749,8 @@ defNumSuggestedAccounts = 20
 --
 -- duplicate each posting for both users, but only if the
 -- other user's account is present in the suggestions.
+--
+-- TODO: use all suggestions from other user's journals
 suggestedPostings :: MonadIO m
                   => AccountName
                   -> Maybe AssertedAmount
@@ -833,6 +841,7 @@ addNewPosting forNext old' = do
   let postings = integrate old'
       nextP = (if forNext then fwd else id)
         $ epUser $ present old'
+  -- TODO user nextUser's journal with accounts
   account <- liftIO $ myAskAccount j
     (Just $ epAccount $ present old') Nothing $ Left "Account"
   new <- editablePosting account Nothing $ length postings

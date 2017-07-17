@@ -142,12 +142,10 @@ learn pairs = do
                 (code, out, err) <- readProcessWithExitCode bin (dbaclProc file) texts
                 appendFile (file <> "_raw" ) $ texts <> "\n\n" <>
                   out <> "\n\nStd error:\n" <> err
-                case code of
-                  ExitSuccess ->
-                    L.putStrLn $   "Done:     " <> name
-                  ExitFailure x ->
-                    L.putStrLn $ "Failed:   " <> name <> "\nwith Code "<> fshow x
-                return (name, code == ExitSuccess)
+                let success = code == ExitSuccess && null err 
+                L.putStrLn $ if success then "Done:     " <> name
+                             else "Failed:   " <> name <> "\nwith Code "<> fshow code <> "\n\nAnd error:\n" <> T.pack err
+                return (name, success)
           return $ Concurrently $ action
 accountCompletion :: [String] -> CompletionFunc IO
 accountCompletion cc = completeWord Nothing

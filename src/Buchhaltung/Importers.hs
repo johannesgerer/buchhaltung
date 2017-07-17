@@ -420,7 +420,7 @@ monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
         , cVersion = "2017"
         }
   ]
-  where amt = (\a b -> textstrip $ a <> " " <> b)
+  where amt = (\a b -> textstrip $ T.replace "," "" a <> " " <> b)
               <$> getCsv "amount" <*> getCsv "currency"
 
 

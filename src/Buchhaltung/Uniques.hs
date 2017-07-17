@@ -117,7 +117,6 @@ checkOrAsk _ (newKey, new) _ []  = do
   modify $ uncurry M.insert $ ((newKey, newIx), Aged New $ fromFilled new)
   liftIO $ T.putStrLn "\nSaved new transaction.\n"
 checkOrAsk exit new msg (( (oldKey, oldEntry), cost):remaining) = do
-  liftIO $ print $ cost
   if getAge oldEntry == Old && cost == Just 0
     then return () -- do nothing, i.e. use old unchanged
     else if False && cost > Just ( - 98)
