@@ -8,7 +8,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE CPP #-}
-#define DERIVING Generic, Default, Show, FromJSON
+#define DERIVING Generic, Default, Show, FromJSON, Eq, Ord
 module Buchhaltung.Types
   (module Control.Monad.Except
   ,module Buchhaltung.Types
@@ -194,7 +194,7 @@ user = readUser id
 
 readLedger
   :: MonadReader (Options User config env) m =>
-     (Ledgers -> FilePath) -> m FilePath
+     (Ledgers -> a) -> m a
 readLedger = (<$> readUser ledgers)
 
 -- | get absolute paths in profile dir
@@ -271,12 +271,12 @@ data User = User
   , ignoredAccountsOnMatch :: Maybe [Regex]
   , numSuggestedAccounts :: Maybe Int
   }
-  deriving ( Generic, Show, FromJSON )
+  deriving ( Generic, Show, FromJSON)
 
 type Users = HM.HashMap Username User
 
 newtype Username = Username T.Text
-  deriving ( Generic, FromJSON, NFData, Eq, Hashable, A.FromJSONKey)
+  deriving ( Generic, FromJSON, NFData, Eq, Hashable, A.FromJSONKey, Ord)
 
 fromUsername :: Username -> T.Text
 fromUsername (Username n) = n
@@ -317,7 +317,7 @@ data Ledgers = Ledgers
   , mainLedger :: FilePath -- ^ ledger file for 'ledger' CLI
   , mainHledger :: Maybe FilePath -- ^ ledger file for 'hledger' CLI
   }
-  deriving (Generic, Default, Show, FromJSON)
+  deriving (Generic, Default, Show, FromJSON, Eq, Ord)
 
 -- | generates the receiable/payable account for between two users
 -- (suffixed by the current, the recording, user)
@@ -344,7 +344,7 @@ askAccountMap = readUser $ maybe mempty fromBankAccounts . bankAccounts
 
 newtype BankAccounts = BankAccounts
   { fromBankAccounts :: AccountMap }
-  deriving (Generic, Default, Show)
+  deriving (Generic, Default, Show, Eq)
 
 
 isIgnored :: Maybe [Regex] -> AccountName -> Bool
@@ -400,7 +400,7 @@ data AQConnection = AQConnection
     , aqName :: String
     , aqType :: AQType
     }
-  deriving ( Generic, Show)
+  deriving ( Generic, Show, Eq, Ord)
 
 instance FromJSON AQConnection where
   parseJSON = A.genericParseJSON $ stripPrefixOptions 2
@@ -420,13 +420,13 @@ instance ToJSON AQConnection where
 -- manual. Use the '-C' to point to the configured 'configDir'.
 data AQType = PinTan
             | Other
-  deriving ( Generic, Show, FromJSON, ToJSON, Eq )
+  deriving ( Generic, Show, FromJSON, ToJSON, Eq, Ord )
 
 data HBCIv = HBCI201
            | HBCI210
            | HBCI220
            | HBCI300
-  deriving ( Generic, Show, FromJSON, ToJSON )
+  deriving ( Generic, Show, FromJSON, ToJSON, Eq, Ord )
 
 toArg HBCI201 = "201"
 toArg HBCI210 = "210"

@@ -70,8 +70,9 @@ import           Text.Read (readEither)
 
 -- * Types
 
-type AddT' env m = RWST (FullOptions env) () Journal (ErrorT m)
+type UserJournals = M.Map Username Journal
 
+type AddT' env m = RWST (FullOptions env) () UserJournals (ErrorT m)
 
 -- | Monad Transformer used to describe the 'add' program
 --
@@ -107,9 +108,18 @@ partners = reader oEnv
 
 add :: AddT' [Username] IO ()
 add = do
-  partner <- mapM (toPartner <=< lookupUser) =<< reader oEnv
-  liftIO . putStr =<< hello
-  withRWST (\r s -> (r{oEnv = partner}, s)) $ do
+  user <- user
+  partners <- mapM (toPartner <=< lookupUser) =<< reader oEnv
+  options <- ask
+  let f (user, files) = do
+        journal <- loadJournal
+          (files ++ [Just . addedByThisUser , addedByOthers])
+          options{ oUser = user }
+        return (name user ,  journal )
+  journals <- fmap M.fromList . mapM f $ (user, [Just . imported])
+              : (fmap (\x -> (pUser x, []) ) partners)
+  withRWST (\r s -> (r{oEnv = partners}, journals)) $ do
+    liftIO . putStr =<< hello
     forever mainLoop
 
 -- | Convert given 'Username' to 'Partner'.
@@ -123,16 +133,16 @@ toPartner part = do
 
 
 -- | Welcome message
-hello :: Monad m => AddT' env m String
+hello :: Monad m => AddT m String
 hello = do
   un <- readUser name
-  j <- get
+  j <- gets M.elems
   return $ intercalate "\n\n" [
     "Hi "<> fshow un <> "!"
     ,"Use readline keys to edit, use tab key to complete account names."
     ,"A code (in parentheses) may be entered following transaction dates."
     ,"A comment may be entered following descriptions or amounts."
-    , show ( length $ jtxns j) ++ " Transactions found"
+    , show ( sum $ length . jtxns <$> j) ++ " Transactions found"
     ]
 
 
@@ -141,12 +151,13 @@ mainLoop :: AddT IO ()
 mainLoop = do
   liftIO $ putStr "\n\nStarting new transaction...\n"
   (iAm, match) <- sugTrans
-  let ask j = do iDa <- askDate Nothing
-                 iDe <- askDescription Nothing
-                 iAc <- myAskAccount j Nothing (Just "learn") (Left "Enter source account" )
-                 return (nulltransaction{tdate=fst iDa, tcode=snd iDa
-                                        ,tdescription=iDe}
-                        ,iAc,iAm)
+  let ask = do iDa <- liftIO $ askDate Nothing
+               iDe <- liftIO $ askDescription Nothing
+               user <- user
+               iAc <- myAskAccount user Nothing (Just "learn") (Left "Enter source account" )
+               return (nulltransaction{tdate=fst iDa, tcode=snd iDa
+                                      ,tdescription=iDe}
+                      ,iAc,iAm)
       useMatch t = return ( nulltransaction{tdate=tdate t,
                                             tdescription=tdescription t}
                           ,paccount p2, AA "" Nothing $ negate $ pamount p2)
@@ -157,7 +168,7 @@ mainLoop = do
         --       pos = tpostings t
   -- PROBLEM1: it's not HBCI, instead sugTrans and clearSecondPosting
   -- emphazises on the "second" posting
-  (transa,iAc,iAm2) <- maybe (get >>= liftIO . ask) useMatch match
+  (transa,iAc,iAm2) <- maybe ask useMatch match
   suggs <- suggestedPostings iAc $ Just iAm2
   result <- edit myEd transa suggs moveToNextEmpty
   saveAndClear match (isJust result) =<< finishTransaction True result
@@ -172,35 +183,37 @@ saveAndClear :: Maybe Transaction
              -- ^ transactioons to be saved: ((user's,other's),
              -> AddT IO ()
 saveAndClear match clearIt (userT, partnerTS)  = do
-  j <- get
-  let saveMine Nothing = clear j
-      saveMine (Just res) = do
+  user <- user
+
+  forM_ userT $ \res -> do
         -- clear the first posting, of the new transaction, if there was a
         -- match -- ReferenceA
         let newt = (if isJust match then clearNthPosting 0 else id) res
         -- add it to the user's journal (+ file)
         file <- readLedger addedByThisUser
-        j' <- myJournalAddTransaction file [newt]
-        infoNewTx =<< user
-        -- clear the matching transactions second posting in the file
-        clear j'
-      clear j =  maybe (return j)
-        (saveChanges . changeTransaction .
-          (:[]) . clearSecondPosting) $ guard clearIt *> match
-      savePartners (partner, tx) = do
-        myJournalAddTransaction (partnerLedger partner) [tx]
-        infoNewTx $ pUser partner
-  j' <- saveMine userT
-  mapM savePartners partnerTS
-  put j'
+        myJournalAddTransaction file user [newt]
 
+  forM_ partnerTS $ \(partner, tx) ->
+        myJournalAddTransaction (partnerLedger partner) (pUser partner) [tx]
+
+  -- clear the matching transactions second posting in the file
+  flip traverse_ (guard clearIt *> match) $ \trans -> do
+    oldJ <- getJournal user
+    newJ <- saveChanges (Just oldJ) .
+            changeTransaction . (:[]) $ clearSecondPosting trans
+    modifyJournal user $ const newJ
+
+-- TODO use alterF from containers-0.5.9.1
+modifyJournal :: MonadState UserJournals m
+              => User -> (Journal -> Journal) -> m ()
+modifyJournal user mod = modify $ M.adjust mod $ name user
+
+getJournal :: MonadState UserJournals m
+           => User -> m Journal
+getJournal user = gets (M.! (name user))
 
 clearSecondPosting :: Transaction -> (Transaction, Transaction)
 clearSecondPosting t = (t, clearNthPosting 1 t)
-
-
-infoNewTx = liftIO . L.putStr .
-  sformat ("\nNew transaction created for '" %F.sh% "'\n") . name
 
 -- | Split 'EditablePosting's in User's Postings and (Partner,
 -- Postings, Open Balance)
@@ -236,9 +249,14 @@ finishTransaction check (Just (tr,postings)) = do
     userTransfer (partner, _, sum) =
       nullP (partnerAccount partner) sum
 
-    partnerT (partner, ps, sum) = (,) partner $
-      toTP $ nullP (userAccount partner) (negate sum)
+    partnerT (partner, ps, sum) = (,) partner $ toTP $
+      -- this posting allows the other posting to be added to the
+      -- suggested postings
+      maybeToList (phantom <$> userT)
+      ++ nullP (userAccount partner) (negate sum)
       ++ E.toList ps
+
+    phantom t = (head $ tpostings t) { pamount = nullmixedamt }
 
     toTP ps = (if check then either err id . balanceTransactionIfRequired
               else id)
@@ -258,17 +276,18 @@ finishTransaction check (Just (tr,postings)) = do
 iso8601 :: UTCTime -> String
 iso8601 = formatTime defaultTimeLocale "%FT%TZ"
 
--- | add transaction to ledger file
-myJournalAddTransaction :: FilePath -> [Transaction] -> AddT IO Journal
-myJournalAddTransaction relative trans = do
+-- | add transaction to ledger file and return new ledger
+myJournalAddTransaction ::
+  FilePath -> User -> [Transaction] -> AddT IO ()
+myJournalAddTransaction relative user trans = do
   file <- absolute relative
   liftIO $ ensureJournalFileExists file -- creates empty journal
-  j <- get
   liftIO $ L.appendFile file
     $ "\n" <> intercalateL "\n\n" trans' <> "\n"
-  return j{jtxns=jtxns j ++ trans }
+  liftIO . L.putStr .
+    sformat ("\nNew transaction created for '" %F.sh% "'\n") . name $ user
+  modifyJournal user $ \j -> j{jtxns=jtxns j ++ trans }
   where trans' = L.dropWhileEnd (=='\n') . fshow <$> trans :: [T.Text]
-
 
 
 clearNthPosting :: Int -> Transaction -> Transaction
@@ -339,7 +358,7 @@ sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
                     g Manual = return (answ, Nothing)
                     g (Choose i) = return $ (answ, Just $ atNote "selectMatch" m' i)
                     g Reenter = sugTrans
-          selectMatch =<< gets (filter (f user) . jtxns)
+          selectMatch =<< filter (f user) . jtxns <$> getJournal user
         sugTrans' a = return (a, Nothing)
 -- data MyPosting = MyP {mypDay::Day, mypAcc::AccountName,mypAmt::Amount}
 --                  deriving (Show)
@@ -570,21 +589,23 @@ dateandcodep = do d <- smartdate
                   return (d, maybe "" T.pack c)
 
 myAskAccount
-  :: Journal
-     -> Maybe AccountName
-     -> Maybe String
-     -> Either T.Text T.Text
-     -> IO AccountName
-myAskAccount j = askAccount completionList
-  where completionList = nub $ sort [ paccount p | t <- jtxns j
-                                      , p <- tpostings t]
+  :: User
+  -> Maybe AccountName
+  -> Maybe String
+  -> Either T.Text T.Text
+  -> AddT IO AccountName
+myAskAccount user a1 a2 a3= do
+  j <- getJournal user
+  let completionList = nub $
+        sort [ paccount p | t <- jtxns j, p <- tpostings t]
+  liftIO $ askAccount completionList a1 a2 a3
 
 askAmount :: Maybe AssertedAmount -- ^ default value, if "" is entered
              -> T.Text  -- ^ prompt
              -> Maybe T.Text -- ^ initial
              -> AddT IO AssertedAmount
 askAmount def pr init = do
-  j <- get
+  j <- getJournal =<< user
   liftIO $ editLoop (extract j) "Amount"
     ((id &&& showAssertedAmount) <$> def) Nothing (Left pr) init
   where
@@ -668,15 +689,21 @@ data EditablePosting = EditablePosting { epPosting :: Maybe Posting
 type EditablePostings = Zipper EditablePosting
 
 -- | construct an 'EditablePosting'
-editablePosting account amt n = do
-  ps <- partners
-  user <- user
-  return $ addPosting account amt EditablePosting
+editablePosting account amt freq n users =
+  addPosting account amt EditablePosting
     { epAccount = account
-    , epFreq=Nothing
+    , epFreq=freq
     , epNumber=n
     , epPosting = Nothing
-    , epUser = differentiate $ E.cycle $ Left user E.:| (Right <$> ps)}
+    , epUser = users }
+
+-- for each user and partner a zipper that has them at the front and
+-- an infinite repetition of the other users in the past.
+userZippers = do
+  partners <- partners
+  user <- user
+  return $ take (succ $ length partners) $ iterate fwd $
+    differentiate $ E.cycle $ Left user E.:| (Right <$> partners)
 
 -- | generate and add new 'Posting' to 'EditablePosting'
 addPosting
@@ -742,44 +769,44 @@ replaceMissing amt | normaliseMixedAmount amt == missingmixedamt = nullmixedamt
 defNumSuggestedAccounts :: Int
 defNumSuggestedAccounts = 20
 
+suggestedPostingsSingleUser :: Monad m =>
+  T.Text -> Zipper (Either User Partner) -> AddT m [EditablePosting]
+suggestedPostingsSingleUser account userZipper = do
+  j <- getJournal user
+  return $  filterOtherUsersAccounts $ sortBy (flip $ comparing epFreq)
+    $ fmap toEp $ group $ sort $ concatMap tail $ filter filt $
+    ((paccount<$>) . tpostings) <$> jtxns j
+  where
+    user = getUser $ present userZipper
+    filt x = account == head x && not ( null x )
+    toEp accounts = editablePosting (head accounts) Nothing
+      (Just $ length accounts) 0 userZipper
+    filterOtherUsersAccounts = maybe id
+      (\x -> filter $ not . L.isPrefixOf (x <> ":") . epAccount)
+      $ accountPrefixOthers user
+  
 
 -- | retrieve a number of suggested contra postings for a given
 -- account, sort frequency of that contra account for the given
 -- account.
 --
+-- TODO incorporate old behavior:
 -- duplicate each posting for both users, but only if the
 -- other user's account is present in the suggestions.
---
--- TODO: use all suggestions from other user's journals
 suggestedPostings :: MonadIO m
                   => AccountName
                   -> Maybe AssertedAmount
                   -> AddT m (E.NonEmpty EditablePosting)
 suggestedPostings account am = do
-  j <- get
-  filterPref <- maybe id (\x -> filter $ not . L.isPrefixOf (x <> ":") . epAccount)
-                <$> readUser accountPrefixOthers
-  nP <- succ . length <$> partners
-  let
-    toEp l = editablePosting (head l) Nothing 0
-      >>= \x -> return $ x{epFreq=Just $ length l}
-    matches = concatMap tail $ filter filt $
-              ((paccount<$>) . tpostings) <$> jtxns j
-  sugaccounts <- sortBy (flip $ comparing epFreq)
-                 <$> mapM toEp (group $ sort matches)
-  let
-    s = filterPref sugaccounts
-    transformed :: [EditablePosting]
-    transformed = if length sugaccounts == length s then s
-                  else do x <- s
-                          take nP $ iterate next x
-  firstP <- editablePosting account am 0 -- ReferenceA
+  userZippers <- userZippers
+  let firstP =
+        editablePosting account am Nothing 0 $ head userZippers -- ReferenceA
   num <- fromMaybe defNumSuggestedAccounts <$>
     readUser numSuggestedAccounts
-  return $ (E.:|) firstP $ take (pred num) $
-    zipWith (\n p -> p{epNumber=n}) [1..] transformed
-  where
-    filt x = account == head x && not ( null x )
+  (E.:|) firstP . take (pred num) .
+    zipWith (\n p -> p{epNumber=n}) [1..] . concat <$>
+    mapM (suggestedPostingsSingleUser account) userZippers
+
 
 -- | change posting's user to the next user
 next :: EditablePosting -> EditablePosting
@@ -808,7 +835,7 @@ showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
   [ let mark = if marked then "->" else "  " :: String
     in [
         sformat (F.d % "," %F.sh% " " %F.s% " " %F.st)
-         (epNumber x) (either name (name.pUser) $ present $ epUser x) mark
+         (epNumber x) (name $ getUser $ present $ epUser x) mark
          $ epAccount x
        ,maybe "" (showMissing . pamount) $ epPosting x
        ,maybe "" (("= " <>) . showAmount2)
@@ -822,6 +849,9 @@ showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
         showMissing amt | normaliseMixedAmount amt == missingmixedamt = "missing"
                         | True = showMixedAmount2 amt
 
+getUser :: Either User Partner -> User
+getUser = either id pUser 
+  
 totalBalance :: [EditablePosting] -> MixedAmount
 totalBalance = negate . sum . fmap pamount . mapMaybe epPosting
 
@@ -837,14 +867,13 @@ showMixedAmount2 amt = T.pack $ showMixedAmountWithPrecision maxprecisionwithpoi
 addNewPosting :: Bool -- ^ for next partner
               -> EditablePostings -> AddT IO EditablePostings
 addNewPosting forNext old' = do
-  j <- get
   let postings = integrate old'
       nextP = (if forNext then fwd else id)
         $ epUser $ present old'
-  -- TODO user nextUser's journal with accounts
-  account <- liftIO $ myAskAccount j
+  account <- myAskAccount (getUser $ present nextP)
     (Just $ epAccount $ present old') Nothing $ Left "Account"
-  new <- editablePosting account Nothing $ length postings
+  new <- editablePosting account Nothing Nothing (length postings)
+    . head <$> userZippers
   let loop (ep:eps) done =
         if isNothing (epPosting ep)
            && epAccount ep == account

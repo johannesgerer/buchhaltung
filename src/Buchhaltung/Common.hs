@@ -24,6 +24,7 @@ import           Control.Applicative ((<$>))
 import           Control.Arrow
 import           Control.Lens (Traversal', Lens', lens)
 import           Control.Monad.RWS.Strict
+import           Control.Monad.Reader
 import           Control.Monad.Writer
 import qualified Data.Aeson as A
 import           Data.Char
@@ -142,10 +143,12 @@ idx xs x = maybe (error (show x++": CSV Field not found")) id (findIndex (==x) x
 --                -> IO Journal
 saveChanges
   :: (MonadReader (Options User config env) m, MonadIO m)
-  =>  (Journal -> (Journal, Integer))
+  => Maybe Journal
+  -- this journal will be also changed and then returned
+  ->  (Journal -> (Journal, Integer))
   -- ^ modifier, returning number of changed
   -> m Journal
-saveChanges change = do
+saveChanges journal change = do
   journalPath <- absolute =<< readLedger imported
   liftIO $ do
     ej <- readJournalFile Nothing Nothing False -- ignore balance assertions
@@ -158,7 +161,11 @@ saveChanges change = do
       else do let res = showTransactions j
               writeFile journalPath res
               putStrLn $ "\n"++ show n ++" Transactions were changed"
-    return j
+    return $ maybe j (\j -> 
+      let (j2, m) = change j
+      in if (n == m) then j2
+         else error "Error 123, see source code. Solution: Use a proper database instead of a file."
+            ) journal
 
 mixed' :: Amount -> MixedAmount
 mixed' = mixed . (:[])
@@ -433,3 +440,18 @@ mlen = maximum . fmap L.length
 
 text' :: T.Text -> P.Box
 text' = P.text . T.unpack
+
+loadJournal
+  :: (MonadError Msg m, MonadIO m) =>
+     [Ledgers -> Maybe FilePath]
+     -> Options User config env -> m Journal
+loadJournal journals options = do
+  liftIO $ printf "(Reading journal from \n%s)\n...\n\n"
+    $ intercalateL "\n" $ show <$> jfiles
+  journal <- liftIO $
+      -- to conquer problems with the `instance Monoid Journal`
+     right mconcat' . sequence <$> mapM (readJournalFile Nothing Nothing False) jfiles
+  either (throwError . T.pack) return journal
+  where jfiles = runReader (catMaybes <$> mapM (mapM absolute <=< readLedger)
+                           journals) options
+        jfiles :: [FilePath]

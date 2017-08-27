@@ -79,7 +79,7 @@ mainLoop msg = do
     fwdMsg _ = ""
     backMsg (LZ (_ :| []) _) =  "<< This is the first transaction >>\n\n"
     backMsg _ = ""
-    g "save" = void $ saveChanges $ changeTransaction
+    g "save" = void $ saveChanges Nothing $ changeTransaction
                $ mapMaybe updateAccountName $ integrate zip
     g "<" = prev
     g ">" = next

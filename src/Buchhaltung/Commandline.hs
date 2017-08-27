@@ -13,6 +13,7 @@ import           Control.DeepSeq
 import           Control.Exception
 import           Control.Monad.RWS.Strict
 import           Control.Monad.Reader
+import           Data.Maybe
 import qualified Data.Text as T
 import           Hledger.Data (Journal)
 import           Hledger.Read (readJournalFile)
@@ -40,8 +41,7 @@ runMain = do
 
 run :: Action -> FullOptions () -> ErrorT IO ()
 run (Add partners) options =
-  void $ withJournals [imported, addedByThisUser] options
-  $ runRWST add options{oEnv = partners}
+  void $ runRWST add options{oEnv = partners} mempty
 
 run (Import version file action) options = runImport action
   where runImport (Paypal puser) =
@@ -80,8 +80,8 @@ run ListBalances options = void $ runAQ options $ callAqbanking ["listbal"]
 run Setup options = void $ runAQ options aqbankingSetup
 
 run Match options =
-  withSystemTempDirectory "dbacl" $ \tmpdir -> do
-  withJournals [imported] options $ match options{oEnv = tmpdir}
+  withSystemTempDirectory "dbacl" $ \tmpdir -> 
+  loadJournal [Just . imported] options >>= match options{oEnv = tmpdir}
 
 run (AQBanking args) options = void $ runAQ options $ callAqbanking args
 
@@ -101,22 +101,3 @@ runLedger' run getExec getLedger args options = flip runReaderT options $ do
     setEnv "LEDGER" ledger
     run exec args
 
--- | performs an action taking a journal as argument. this journal is
--- read from 'imported' and 'addedByThisUser' ledger files
--- withJournals ::
---   [Ledgers -> FilePath]
---   ->  FullOptions ()
---   -> (Journal -> ErrorT IO b) -> ErrorT IO b
-withJournals
-  :: (MonadError Msg m, MonadIO m) =>
-     [Ledgers -> FilePath]
-     -> Options User config env -> (Journal -> m b) -> m b
-withJournals journals options f = do
-  liftIO $ printf "(Reading journal from \n%s)\n...\n\n"
-    $ intercalateL "\n" $ show <$> jfiles
-  journal <- liftIO $
-      -- to conquer problems with the `instance Monoid Journal`
-     right mconcat' . sequence <$> mapM (readJournalFile Nothing Nothing False) jfiles
-  either (throwError . T.pack) f journal
-  where jfiles = runReader (mapM (absolute <=< readLedger)
-                           journals) options
