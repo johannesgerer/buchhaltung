@@ -64,6 +64,7 @@ fillTxn datetime e@(ImportedEntry t postings source) = do
                         ,pamount = (if negateQ
                           then Mixed . fmap negate . amounts else id)
                           $ mamountp' $ T.unpack am }
+  -- use this to debug amount parsing: mamountp'
 
 
 -- | read entries from handle linewise, process and add to ledger

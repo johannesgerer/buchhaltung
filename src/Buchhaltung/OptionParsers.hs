@@ -161,6 +161,13 @@ importOpts =
   (progDesc $ concat ["import from Monefy CSV export. "
                      ,"versions: 2017"])
   <>
+  command' "revolut"
+  (fmap Revolut $ RevolutSettings . T.pack <$> strArgument
+    (help "Revolut user (as configured in 'bankAccounts')"
+      <> metavar "USER"))
+  (progDesc $ concat ["manually constructed CSV from Revolut's PDF export."])
+
+  <>
   command' "paypal"
   (Paypal . T.pack <$> strArgument
     (help "paypal username (as configured in 'bankAccounts')"
