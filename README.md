@@ -182,6 +182,8 @@ Consider frequent credit card payments to Starbucks:
     
     * ...
 
+See also [this issues](https://github.com/johannesgerer/buchhaltung/issues/16) on how you could use this.
+
 ## Enter transactions
 
 ```shell
