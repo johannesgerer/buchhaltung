@@ -10,6 +10,7 @@ module Buchhaltung.Importers
   , aqbankingImporter
   , comdirectVisaImporter
   , monefyImporter
+  , revolutImporter
   , barclaycardusImporter
   , pncbankImporter
   , module Buchhaltung.Import
@@ -20,6 +21,7 @@ where
 import           Buchhaltung.Common
 import           Buchhaltung.Import
 import           Control.Arrow
+import           Control.Monad.Cont
 import           Control.Monad.RWS.Strict
 import           Data.Functor.Identity
 import qualified Data.HashMap.Strict as HM
@@ -73,7 +75,7 @@ csvImportPreprocessed pp versionedCsv csv1 = do
      cVersion = version }) <- headerInfo versionedCsv version
   let toEntry x = ImportedEntry
           { ieT = genTrans date (vdate =<< cVDate g x)
-                  (getCsvConcatDescription desc x)
+                  (getCsvConcatDescription env2 desc x)
           , ieSource  = fromMapToSource form x
           , iePostings = 
             (\p -> (AccountId (cBank g env2 x) (cAccount p x)
@@ -85,7 +87,8 @@ csvImportPreprocessed pp versionedCsv csv1 = do
             vdate vd = if date == vd then Nothing
                        else Just vd
             date  = cDate g x
-      (header, rows) = parseCsv (cSeparator g) . TL.fromStrict $ csv2
+      (header, rows) = (if cStrip g then stripCsv else id) $
+        parseCsv (cSeparator g) . TL.fromStrict $ csv2
   if expected == header then
     return $ fmap toEntry $ filter (cFilter g) rows
     else throwError $ L.unlines
@@ -110,6 +113,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
   [CSV
     { cFilter  = const True
     , cDate = readdate . getCsv "date"
+        , cStrip = False
     , cVDate = Just . readdate . getCsv "valutadate"
     , cBank = const $ getCsv "localBankCode"
     , cPostings =
@@ -303,6 +307,7 @@ pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
   [CSV
         { cFilter  =(/= "") . getCsv "Date"
         , cDate = parseDateUS . getCsv "Date"
+        , cStrip = False
         , cVDate = Just . parseDateUS . getCsv "Date"
         , cBank = const $ const "PNC Bank"
         , cPostings =
@@ -349,6 +354,7 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
   [CSV
         { cFilter  =(/= "") . getCsv "Transaction Date"
         , cDate = parseDateUS . getCsv "Transaction Date"
+        , cStrip = False
         , cVDate = Just . parseDateUS . getCsv "Transaction Date"
         , cBank = const . aBank
         , cPostings =
@@ -371,11 +377,65 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
   ]
   where desc = ["Description"]
 
+-- * Revolut Csv
+  
+revolutImporter :: Importer RevolutSettings
+revolutImporter = Importer Nothing $ csvImport revolut
+
+revolut :: VersionedCSV RevolutSettings
+revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
+  [CSV
+        { cFilter  = (/= "") . getCsv "Completed Date"
+        , cDate = parseDate "%e %b %Y" . getCsv "Completed Date"
+        , cStrip = True
+        , cVDate = const Nothing
+        , cBank = const $ const "Revolut"
+        , cPostings =
+          [ \env -> CsvPosting
+            { cAccount = const $ revolutUser env
+            , cAmount = normalizeCurrency .
+                        getCsvCreditDebit "Paid Out" "Paid In"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }
+          ]
+        , cSeparator = ';'
+        , cHeader = ["Completed Date"
+                    ,"Reference"
+                    ,"Paid Out"
+                    ,"Paid In"
+                    ,"Balance"
+                    ]
+        , cDescription = [Const "Revolut"
+                         , Field "Reference"]
+        , cBayes = ["Reference"]
+        , cVersion = "2017"
+        }
+  ]
+  where amt = (\a b -> textstrip $ T.replace "," "" a <> " " <> b)
+              <$> getCsv "amount" <*> getCsv "currency"
+
+currencySymbols = [ ("$", "USD")
+                  , ("€", "EUR")
+                  , ("£", "GBP") ]
+  
+-- remove currency signs and append corresponding currency name
+normalizeCurrency :: T.Text -> T.Text
+normalizeCurrency text = (`runCont` id) $ callCC $ \exit -> do
+  let g (symbol, name) text1 = unless (T.length text2 == L.length text1)
+        $ exit $ T.replace " " "" text2 <> " " <> name
+        where text2 = T.replace symbol "" text1
+  mapM_ (\x -> g x text) currencySymbols
+  return text
+
+  
 -- * Monefy Csv
   
 monefyImporter :: Importer MonefySettings
 monefyImporter = Importer Nothing $ csvImportPreprocessed unambiguous monefy
 
+unambiguous :: Monad m
+            =>(T.Text, t) -> m (T.Text, t)
 unambiguous (t,e) = return (L.unlines (h2:rest
                                       -- (T.replace "ü" "ue" <$> rest)
                                       ), e)
@@ -386,6 +446,7 @@ monefy :: VersionedCSV MonefySettings
 monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
   [CSV
         { cFilter  = const True
+        , cStrip = False
         , cDate = parseDate "%d/%m/%Y" . getCsv "date"
         , cVDate = const Nothing
         , cBank = const . monefyInstallation
@@ -415,7 +476,9 @@ monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
                     ,"currency2"
                     ,"description"
                     ]
-        , cDescription = [Const "Monefy", Field "description"]
+        , cDescription = [Const "Monefy"
+                         , Read monefyInstallation
+                         , Field "description"]
         , cBayes = []
         , cVersion = "2017"
         }
@@ -437,6 +500,7 @@ comdirectVisa :: VersionedCSV T.Text
 comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   [CSV
         { cFilter  =(/= "") . getCsv "Buchungstag"
+        , cStrip = False
         , cDate = parseDateDE . getCsv "Buchungstag"
         , cVDate = Just . parseDateDE . getCsv "Valuta"
         , cBank = const
@@ -464,6 +528,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
   , CSV
         { cFilter  =(/= "") . getCsv "Buchungstag"
         , cDate = parseDateDE . getCsv "Buchungstag"
+        , cStrip = False
         , cVDate = Just . parseDateDE . getCsv "Umsatztag"
         , cBank = const
         , cPostings =
@@ -509,6 +574,7 @@ paypalImport =
   let base = CSV
         { cFilter  = (/= "Storniert") . getCsv " Status"
         , cDate = parseDateDE . getCsv "Datum"
+        , cStrip = False
         , cVDate = const Nothing
         , cBank = const $ const "Paypal"
         , cPostings =
@@ -850,6 +916,7 @@ defaultFields = fromListUnique . fmap (first $ (() <$))
                ,toBayes aqbankingImport
                ,toBayes barclaycardus
                ,toBayes pncbank
+               ,toBayes revolut
                ,toBayes monefy]
 
 -- extract the values of all available bayes fields of a given

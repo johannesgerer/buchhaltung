@@ -469,11 +469,17 @@ data ImportAction = Paypal PaypalUsername
                   | BarclaycardUs
                   | Pncbank { pncAccountIdentifier :: T.Text }
                   | Monefy MonefySettings
+                  | Revolut RevolutSettings
   deriving (Show, Generic, NFData)
 
 data MonefySettings = MonefySettings
   { monefyInstallation :: T.Text
   , monefyCategorySuffix :: Bool }
+  deriving (Show, Generic, NFData)
+
+
+data RevolutSettings = RevolutSettings
+  { revolutUser :: T.Text }
   deriving (Show, Generic, NFData)
 
 

@@ -164,7 +164,8 @@ saveChanges journal change = do
     return $ maybe j (\j -> 
       let (j2, m) = change j
       in if (n == m) then j2
-         else error "Error 123, see source code. Solution: Use a proper database instead of a file."
+         else error $ printf
+              "Error 123, see source code. Solution: Use a proper database instead of a file. read: %d passed: %d" n m
             ) journal
 
 mixed' :: Amount -> MixedAmount
@@ -270,6 +271,10 @@ trimnl = mconcat . T.lines
 
 type MyRecord = (HM.HashMap T.Text T.Text)
 
+stripCsv :: ([T.Text], [MyRecord]) -> ([T.Text], [MyRecord])
+stripCsv = fmap textstrip ***
+  fmap (HM.fromList . fmap (textstrip *** textstrip ) . HM.toList)
+  
 parseCsv :: Char -- ^ separator
          -> TL.Text -> ([T.Text], [MyRecord])
 parseCsv sep = either error ((fmap T.decodeUtf8 . V.toList)
@@ -279,21 +284,22 @@ parseCsv sep = either error ((fmap T.decodeUtf8 . V.toList)
                . encodeUtf8
 
 getCsvCreditDebit :: T.Text -> T.Text -> MyRecord -> T.Text
-getCsvCreditDebit creditColumn debitColumn record = if hasValue creditValue 
-                                                    then "-" `T.append` creditValue 
-                                                    else debitValue where
-  hasValue = T.any isDigit
+getCsvCreditDebit creditColumn debitColumn record =
+  if T.any isDigit creditValue 
+  then "-" <> creditValue 
+  else debitValue where
   creditValue = getCsv creditColumn record
   debitValue = getCsv debitColumn record
 
 getCsvConcat :: [T.Text] -> MyRecord -> T.Text
-getCsvConcat = getCsvConcatDescription . fmap Field
+getCsvConcat fields record = L.unwords $ flip getCsv record <$> fields
   
 getCsvConcatDescription
-  :: [Description] -> MyRecord -> T.Text
-getCsvConcatDescription x record = L.unwords $ g <$> x
+  :: env -> [Description env] -> MyRecord -> T.Text
+getCsvConcatDescription env x record = L.unwords $ g <$> x
   where g (Field f) = getCsv f record
         g (Const t) = t
+        g (Read f)  = f env
 
 getCsv :: T.Text -> MyRecord -> T.Text
 getCsv c x = lookupErrD (show (HM.keys x)) HM.lookup c x
@@ -362,19 +368,22 @@ data CsvImport env = CSV
   { cFilter :: MyRecord -> Bool
   -- ^ should this csv line be processed?
   , cDate :: Getter Day
+  , cStrip :: Bool
   , cVDate :: Getter (Maybe Day)
   , cBank :: env -> Getter T.Text
   , cHeader      :: [T.Text]
   , cBayes       :: [T.Text]
-  , cDescription :: [Description]
+  , cDescription :: [Description env]
   , cVersion     :: Version
   , cSeparator :: Char
   , cPostings :: [env -> CsvPostingImport]
   }
 
-data Description = Field T.Text | Const T.Text
+data Description env = Field T.Text | Const T.Text | Read (env -> T.Text)
+
 toField (Field t) = Just t
 toField _ = Nothing
+
 
 data CheckedCsvImport a = UnsafeCSV { cRaw :: CsvImport a }
   -- deriving (Show)
