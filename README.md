@@ -70,13 +70,13 @@ stack install
     
     If you want a folder under a different location, either create a symlink or set the `BUCHHALTUNG` environment variable to that location.
 
-2. Edit the `config.yml`.
+2. Edit the [`config.yml`](config.yml).
 
 3. Make sure the configured ledger files exist.
 
 # Getting help
 
-* The `config.yml` file provides excessive comments.
+* The [`config.yml`](config.yml) file provides excessive comments.
 * This readme documents most functionality.
 * Every command and subcommand shows a help message when invoked with `-h`.
 * Read the haddock documentation and source code on [Hackage](https://hackage.haskell.org/package/buchhaltung).
@@ -93,17 +93,17 @@ To initialize AqBanking after you edited the config file, you need to run:
 buchhaltung setup
 ```
 
-To clean everything aqbanking related remove the configured `aqBanking.configDir`  and rerun the `setup` command.
+To clean everything aqbanking related remove the configured [`aqBanking.configDir`](config.yml)  and rerun the `setup` command.
 
 ### Manual AqBanking setup
 
-Currently only the HBCI `PinTan` method is supported by the `setup` command (pull requests welcome). For other methods or if the AqBanking setup fails due to other reasons, you can configure AqBanking manually into the configured `aqBanking.configDir` (see for help [here](https://www.aquamaniac.de/sites/download/download.php?package=09&release=09&file=01&dummy=aqbanking4-handbook-20091231.pdf) or [here](https://wiki.gnucash.org/wiki/AqBanking), usually via `aqhbci-tool4 -C <aqBanking.configDir>`).
+Currently only the HBCI `PinTan` method is supported by the `setup` command (pull requests welcome). For other methods or if the AqBanking setup fails due to other reasons, you can configure AqBanking manually into the configured [`aqBanking.configDir`](config.yml) (see for help [here](https://www.aquamaniac.de/sites/download/download.php?package=09&release=09&file=01&dummy=aqbanking4-handbook-20091231.pdf) or [here](https://wiki.gnucash.org/wiki/AqBanking), usually via `aqhbci-tool4 -C <aqBanking.configDir>`).
 
 So far, I have not tested the OFXDirectConnect capabilities of AqBanking (please share your experiences), but `buchhaltung` should transparently support any method offered by AqBanking.
 
 ## Importing transactions
 
-There various ways (including from PayPal CSV files) to import transactions into your configured `ledgers.imported` file. They are presented in the following, but consult
+There various ways (including from PayPal CSV files) to import transactions into your configured [`ledgers.imported`](config.yml) file. They are presented in the following, but consult
 
 ```shell
 buchhaltung import -h
@@ -111,7 +111,7 @@ buchhaltung import -h
 
 and the `-h` calls to its subcommands to see the currently available functionality.
 
-The accounts of the imported transactions will be taken from the configured `bankAccounts` and the offsetting balance will be posted to an account named `TODO`, and will be replaced by [`match`](#match-accounts).
+The accounts of the imported transactions will be taken from the configured [`bankAccounts`](config.yml) and the offsetting balance will be posted to an account named `TODO`, and will be replaced by [`match`](#match-accounts).
 
 The original source information will be included in the second posting's comment and used for learning the account mappings and to find and handle duplicates.
 
@@ -143,13 +143,13 @@ copy and adapt from the other importers.
 You can look at `aqbankingImporter`, `comdirectVisaImporter` and
 `paypalImporter`
 in
-[Buchhaltung/Importers.hs](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/Buchhaltung-Importers.html).
+[Buchhaltung/Importers.hs](https://hackage.haskell.org/package/buchhaltung-0.0.3/docs/buchhaltung/Buchhaltung-Importers.html) (or on [GitHub](src/Buchhaltung/Importers.hs)).
 
 ### Resolve duplicates
 
 Banks often minimally change the way they report transactions which leads to unwanted duplicates.
 
-When importing, *Buchhaltung* will identify duplicates based on `([(Commodity,Quantity)], AccountName, Day)` and interactively resolve them by showing the user what fields have changed. If there are several candidates, it sorts the candidates according to similarity using `levenshteinDistance` from [edit-distance](https://hackage.haskell.org/package/edit-distance-0.2.1.3). (See [`Buchhaltung.Uniques.addNew`](https://github.com/johannesgerer/buchhaltung/blob/master/src/Buchhaltung/Uniques.hs#L27))
+When importing, *Buchhaltung* will identify duplicates based on `([(Commodity,Quantity)], AccountName, Day)` and interactively resolve them by showing the user what fields have changed. If there are several candidates, it sorts the candidates according to similarity using `levenshteinDistance` from [edit-distance](https://hackage.haskell.org/package/edit-distance-0.2.1.3). (See [`Buchhaltung.Uniques.addNew`](src/Buchhaltung/Uniques.hs#L27))
 
 ## Match accounts
 
@@ -161,8 +161,8 @@ This command asks the user for the offsetting accounts of imported transactions,
 
 Have a look at the example output [here](example_output/match.md).
 
-The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported transaction.  
-Please note that you will have to enter account information in **reverse order**: for example `Expenses:Food` has to be entered as `Food:Expenses`.  
+The significantly speed up this process, it learns the account mapping from existing transactions in the configured [`ledgers.imported`](config.yml) file using the original source of the imported transaction.
+Please note that you will have to enter account information in **reverse order**: for example `Expenses:Food` has to be entered as `Food:Expenses`.
 
 See [this](#input-and-tab-completion) information about the account input field.
 
@@ -207,11 +207,11 @@ After the amount is entered, the user can select a transaction whose title, date
 
 * whose second posting has not been cleared (i.e. marked with an asterisk in front of the account name, and
 * whose first posting's amount has the absolute value as the entered amount
-* whose first posting's account is contained in the configured `bankAccounts` and does not match any of regexes in `ignoredAccountsOnAdd`.
+* whose first posting's account is contained in the configured [`bankAccounts`](config.yml) and does not match any of regexes in [`ignoredAccountsOnAdd`](config.yml).
 
 ### Suggested accounts
 
-Once the first posting's account has been entered, the editor suggests accounts for the second posting based on the frequency of the resulting transaction's accounts in the configured `ledgers.addedByThisUser` file.
+Once the first posting's account has been entered, the editor suggests accounts for the second posting based on the frequency of the resulting transaction's accounts in the configured [`ledgers.addedByThisUser`](config.yml) file.
 
 ### Assertions \& assignments
 
@@ -219,7 +219,7 @@ Amounts can be entered with [assertions](http://hledger.org/manual.html#balance-
 
 ### Default currency
 
-In order to be able to enter naked amounts and have the currency added automatically, add a [default currency](http://hledger.org/manual.html#default-commodity) to the configured `addedByThisUser` ledger file. Example:
+In order to be able to enter naked amounts and have the currency added automatically, add a [default currency](http://hledger.org/manual.html#default-commodity) to the configured [`addedByThisUser`](config.yml) ledger file. Example:
 
 ```
 D 1,000.000 EUR
@@ -232,7 +232,7 @@ D 1,000.000 EUR
 buchhaltung add -w alice
 ```
 
-If there is more than one user configured — possibly each with their own ledger, they can be included/activated via the command-line argument `-w`. This enables you to enter a transaction where postings belong to different users. When done, a transaction for each user will be generated containing their respective postings and a balancing posting to an account prefixed with the configured `accountPrefixOthers`.
+If there is more than one user configured — possibly each with their own ledger, they can be included/activated via the command-line argument `-w`. This enables you to enter a transaction where postings belong to different users. When done, a transaction for each user will be generated containing their respective postings and a balancing posting to an account prefixed with the configured [`accountPrefixOthers`](config.yml).
 
 Example taken from the [output](example_output/add_multi_user.md) of the above command:
 
@@ -285,7 +285,7 @@ buchhaltung ledger
 buchhaltung hledger
 ```
 
-This calls the respective program with the `LEDGER` environment variable set to the configured `mainLedger` or `mainHledger`.
+This calls the respective program with the `LEDGER` environment variable set to the configured [`mainLedger`](config.yml) or [`mainHledger`](config.yml).
 
 ### Commit the changes
 
@@ -293,4 +293,10 @@ This calls the respective program with the `LEDGER` environment variable set to 
 buchhaltung commit -a -m'checking account ok'
 ```
 
-this commits all changes to the git repository that contains the `mainLedger` file. The commit message will also contain the output of `buchhaltung lb` and `buchhaltung ledger balance --end tomorrow`.
+or
+
+```shell
+buchhaltung commitHledger -a -m'checking account ok'
+```
+
+this commits all changes to the git repository that contains the [`mainLedger`](config.yml) file. The commit message will also contain the output of `buchhaltung lb` and `buchhaltung ledger balance --end tomorrow`.

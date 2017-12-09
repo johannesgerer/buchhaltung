@@ -18,6 +18,7 @@ import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.RWS.Strict
 import           Data.Bits
+import           Data.Void
 import           Data.Char
 import           Data.Decimal
 import           Data.Default
@@ -44,8 +45,7 @@ import qualified Formatting as F
 import qualified Formatting.ShortFormatters as F
 import           Hledger hiding (at)
 import           Safe
-import qualified Text.Megaparsec as MP hiding (State)
-import qualified Text.Megaparsec.Text as MP
+import qualified Text.Megaparsec as MP
 import           Text.Parsec.Char
 import           Text.Parsec.Combinator (eof,many1)
 import           Text.Parsec.Prim (parse,try)
@@ -581,7 +581,7 @@ askDate def = do
                          ,"next"]
 
 -- | HLedger's 'smartdate' and code
-dateandcodep :: MP.Parser (SmartDate, T.Text)
+dateandcodep :: MP.Parsec Void T.Text (SmartDate, T.Text)
 dateandcodep = do d <- smartdate
                   c <- optional codep
                   many spacenonewline
@@ -626,7 +626,7 @@ askAmount def pr init = do
 
 parseAmount
   :: Journal
-     -> T.Text -> Either (MP.ParseError Char MP.Dec) AssertedAmount
+     -> T.Text -> Either (MP.ParseError Char Void) AssertedAmount
 parseAmount j = parseWithState' j $ ((flip $ AA "") <$>
                 (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
                 <*> partialbalanceassertionp
@@ -638,7 +638,7 @@ _amountp2 = MP.try leftsymbolamountp
   MP.<|> MP.try rightsymbolamountp
   MP.<|> nosymbolamountp2
 
-nosymbolamountp2 :: Monad m => JournalStateParser m Amount
+nosymbolamountp2 :: Monad m => JournalParser m Amount
 nosymbolamountp2 = do
   (q,prec,mdec,mgrps) <- lift numberp
   p <- priceamountp
@@ -647,7 +647,7 @@ nosymbolamountp2 = do
   let (c,s) = case defcs of
         Just (defc,defs) -> (defc, defs{asprecision=max (asprecision defs) prec})
         Nothing          -> ("", amountstyle{asprecision=prec, asdecimalpoint=mdec, asdigitgroups=mgrps})
-  return $ Amount c q p s
+  return $ Amount c q p s False
   MP.<?> "no-symbol amount"
 
 getDefaultCommodityAndStyle2

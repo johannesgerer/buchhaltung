@@ -8,5 +8,6 @@ packages:
 #   - hledger-lib
 #   extra-dep: true
 
-resolver: lts-8.20
+
+resolver: nightly-2017-12-09
 pvp-bounds: both

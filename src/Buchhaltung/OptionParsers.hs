@@ -104,11 +104,9 @@ commands =
 
   -- todo: pass through, that only sets env var and runs remaining args as "command args"
 
-  <> passThrough Commit "commit"  (Just "c") (Just $ concat
-    ["run git commit in the dir of the user's mainLedger file and pass all "
-    ,"following arguments to git. "
-    ,"The Message will contain all AQBalances "
-    ,"and the Ledger balance sheet"])
+  <> passThrough (Commit False) "commit"  (Just "c") (commitMsg "ledger")
+
+  <> passThrough (Commit True) "commitHledger"  (Just "ch") (commitMsg "hledger")
 
   <> passThrough Ledger "ledger" (Just "l") Nothing
 
@@ -116,6 +114,12 @@ commands =
 
   <> passThrough AQBanking "aqbanking" (Just "aq") Nothing
 
+commitMsg x = (Just $ concat
+    ["run git commit in the dir of the user's mainLedger file and pass all "
+    ,"following arguments to git. "
+    ,"The Message will contain all AQBalances "
+    ,"and the ", x ," balance sheet"])
+  
 passThrough
   :: ([String] -> Action)
   -> String -- ^ command

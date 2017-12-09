@@ -67,15 +67,16 @@ run (Update version doMatch doRequest) options = do
     options{oEnv = ((), version)} ()
   when doMatch $ run Match options
 
-run (Commit args) options = flip runReaderT options $ do
+run (Commit hledger args) options = flip runReaderT options $ do
   un <- readUser $  show . name
   dir <- takeDirectory <&> absolute =<< readLedger mainLedger
   bal <- lift $ runAQ options $ readAqbanking ["listbal"]
-  sheet <- lift $ runLedger readProcess' ["balance", "-e", "tomorrow"] options
+  sheet <- lift $ run readProcess' ["balance", "-e", "tomorrow"] options
   liftIO $ do setCurrentDirectory dir
               callProcess "git" $ "commit":args ++
                 ["-m", intercalateL "\n" $ ["User " ++ un, ""]
                   ++ bal ++ ["Balance Sheet:", sheet]]
+  where run = if hledger then runHledger else runLedger
 
 run ListBalances options = void $ runAQ options $ callAqbanking ["listbal"]
   
@@ -89,12 +90,10 @@ run (AQBanking args) options = void $ runAQ options $ callAqbanking args
 
 run (Ledger args) options = runLedger callProcess args options
 
-run (HLedger args) options =
-  runLedger' callProcess cHledgerExecutable
-  (maybe mainLedger const =<< mainHledger)
-  args options
+run (HLedger args) options = runHledger callProcess args options
 
 runLedger run = runLedger' run cLedgerExecutable mainLedger
+runHledger run = runLedger' run cHledgerExecutable (maybe mainLedger const =<< mainHledger)
 
 runLedger' run getExec getLedger args options = flip runReaderT options $ do
   exec <- readConfig getExec

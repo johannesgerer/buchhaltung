@@ -1,6 +1,11 @@
 users:
   - name: jo
     ledgers:
+      ###  IMPORTANT NOTE: make sure the following files exist.
+      
+      ### As a safety feature `buchhaltung` will NOT create them on the fly, as
+      ### it cannot differentiate between a misconfigured config and the user's wish
+      ### to create an empty ledger. (enhancement: ask the user)
 
       # main ledger file passed to `hledger` or `ledger` and used to create the commit message.
       # this file should (at least) include the other files.

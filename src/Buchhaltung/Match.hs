@@ -116,7 +116,7 @@ suggestAccount tx = do
                 info = either fshow (text . lookup sa)
                   (dbacl_parse accs output)
                 text Nothing = "failed\t\t"
-                text (Just te) = "uncertainty: " <> T.pack te <> "\t"
+                text (Just te) = "uncertainty: " <> T.pack te <> "\t\t"
   maybe g (return . Just . Default "manual:\t\t\t") $ wInfo tx
   
 bayesLine :: Monad m => WithSource a -> MatchT m T.Text
@@ -186,7 +186,7 @@ groupByAccount j = do
 myAskAccount :: Maybe Default -> MatchT IO AccountName
 myAskAccount acc = getAccountList (const True) >>= \accs -> 
   liftIO $ askAccount accs (defAcc <$> acc) (Just histfsuf) prompt
-  where prompt = Right $ maybe "" showdef acc <> "\n[<, >, save, RET]:\t"
+  where prompt = Right $ maybe "" showdef acc <> "\nEnter an account name, '<', '>' to navigate, or 'save':\n"
         showdef (Default d a) = d <> (revAccount2 a) :: T.Text
 
 getAccountList :: Monad m => (Bool -> Bool) -> MatchT m [AccountName]
