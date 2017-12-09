@@ -164,7 +164,8 @@ saveChanges journal change = do
     return $ maybe j (\j -> 
       let (j2, m) = change j
       in if (n == m) then j2
-         else error "Error 123, see source code. Solution: Use a proper database instead of a file."
+         else error $ printf
+              "Error 123, see source code. Solution: Use a proper database instead of a file. read: %d passed: %d" n m
             ) journal
 
 mixed' :: Amount -> MixedAmount

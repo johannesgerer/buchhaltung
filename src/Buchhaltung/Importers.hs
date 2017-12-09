@@ -399,7 +399,7 @@ revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
             , cNegate = const False
             }
           ]
-        , cSeparator = ','
+        , cSeparator = ';'
         , cHeader = ["Completed Date"
                     ,"Reference"
                     ,"Paid Out"
@@ -990,6 +990,7 @@ defaultFields = fromListUnique . fmap (first $ (() <$))
                ,toBayes aqbankingImport
                ,toBayes barclaycardus
                ,toBayes pncbank
+               ,toBayes revolut
                ,toBayes monefy]
 
 -- extract the values of all available bayes fields of a given
