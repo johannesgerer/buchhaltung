@@ -162,6 +162,7 @@ This command asks the user for the offsetting accounts of imported transactions,
 Have a look at the example output [here](example_output/match.md).
 
 The significantly speed up this process, it learns the account mapping from existing transactions in the configured `ledgers.imported` file using the original source of the imported transaction.  
+Please note that you will have to enter account information in **reverse order**: for example `Expenses:Food` has to be entered as `Food:Expenses`.  
 
 See [this](#input-and-tab-completion) information about the account input field.
 
@@ -181,6 +182,8 @@ Consider frequent credit card payments to Starbucks:
     * you sometimes order for friends and get reimbursed later.
     
     * ...
+
+See also [this issues](https://github.com/johannesgerer/buchhaltung/issues/16) on how you could use this.
 
 ## Enter transactions
 
