@@ -10,6 +10,8 @@ module Buchhaltung.Importers
   , aqbankingImporter
   , comdirectVisaImporter
   , monefyImporter
+  , natwestIntlImporter
+  , barclaysUkImporter
   , revolutImporter
   , barclaycardusImporter
   , pncbankImporter
@@ -60,6 +62,9 @@ headerInfo g v = do
 -- | Data type for preprocessing and meta-data extraction of CSV files
 type Preprocessor env1 env2 = forall m. MonadError Msg m
                       => (T.Text, env1) -> m (T.Text, env2)
+
+processLines :: ([T.Text] -> [T.Text]) -> Preprocessor env env
+processLines f = return . (first $ T.unlines . f . T.lines)
 
 csvImport = csvImportPreprocessed return
 
@@ -432,15 +437,13 @@ normalizeCurrency text = (`runCont` id) $ callCC $ \exit -> do
 -- * Monefy Csv
   
 monefyImporter :: Importer MonefySettings
-monefyImporter = Importer Nothing $ csvImportPreprocessed unambiguous monefy
+monefyImporter = Importer Nothing $ csvImportPreprocessed unambiguousHeader monefy
 
-unambiguous :: Monad m
-            =>(T.Text, t) -> m (T.Text, t)
-unambiguous (t,e) = return (L.unlines (h2:rest
-                                      -- (T.replace "ü" "ue" <$> rest)
-                                      ), e)
-  where _:rest = L.lines t
-        h2 = "date,account,category,amount,currency,converted amount,currency2,description"
+-- | replace the header by one with unique column names (currency2)
+unambiguousHeader :: Preprocessor env env
+unambiguousHeader = processLines $ (h2:) . tail
+  where h2 = "date,account,category,amount,currency,converted amount,currency2,description"
+             -- (T.replace "ü" "ue" <$> rest)
 
 monefy :: VersionedCSV MonefySettings
 monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
@@ -486,9 +489,162 @@ monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
   where amt = (\a b -> textstrip $ T.replace "," "" a <> " " <> b)
               <$> getCsv "amount" <*> getCsv "currency"
 
+-- * BarclaysUk International CSV export
 
+barclaysUkImporter :: Importer ()
+barclaysUkImporter = Importer Nothing $ csvImport barclaysUk
+  
+barclaysUk :: VersionedCSV ()
+barclaysUk = toVersionedCSV (SFormat "barclaysUk" $ DefaultVersion "2017")
+  [CSV
+        { cFilter = (/= "") . getCsv "Date"
+        , cStrip = False
+        , cDate = parseDate "%d/%m/%Y" . getCsv "Date"
+        , cVDate = const Nothing
+        , cBank = const $ fst <$> accountBank
+        , cPostings =
+          [ const CsvPosting
+            { cAccount = snd <$> accountBank
+            , cAmount = (<> " GBP") <$> getCsv "Amount"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }
+          ]
+        , cSeparator = ','
+        , cHeader = ["Number"
+                    ,"Date"
+                    ,"Account"
+                    ,"Amount"
+                    ,"Subcategory"
+                    ,"Memo"
+                    ]
+        , cDescription = Field <$> desc 
+        , cBayes = desc
+        , cVersion = "2017"
+        }
+  ]
+  where accountBank = (g . T.splitOn " ") . getCsv "Account"
+        g [acc,bank] = (acc, bank)
+        g _ = error "Expected 'Account' to be of the format \"{sort code} {account number}\""
+        desc = ["Subcategory", "Memo"]
 
+-- * Natwest International CSV export
 
+natwestIntlImporter :: Importer ()
+natwestIntlImporter = Importer Nothing $ csvImportPreprocessed (processLines $ tail) natwestIntl
+  
+natwestIntl :: VersionedCSV ()
+natwestIntl = toVersionedCSV (SFormat "natwestIntl" $ DefaultVersion "2017")
+  [CSV
+        { cFilter = (/= "") . getCsv "Date"
+        , cStrip = False
+        , cDate = parseDate "%d/%m/%Y" . getCsv "Date"
+        , cVDate = const Nothing
+        , cBank = const $ fst <$> accountBank
+        , cPostings =
+          [ const CsvPosting
+            { cAccount = snd <$> accountBank
+            , cAmount = (<> " GBP") <$> getCsv " Value"
+            , cSuffix = Nothing
+            , cNegate = const False
+            }
+          ]
+        , cSeparator = ','
+        , cHeader = ["Date"
+                    ," Type"
+                    ," Description"
+                    ," Value"
+                    ," Balance"
+                    ," Account Name"
+                    ," Account Number"
+                    ]
+        , cDescription = [Field " Description"
+                         ,Const ", Type "
+                         ,Field " Type"]
+        , cBayes = [" Description"
+                   ," Type"]
+        , cVersion = "2017"
+        }
+  ]
+  where accountBank = (g . T.splitOn "-" . T.tail ) . getCsv " Account Number"
+        g [acc,bank] = (acc, bank)
+        g _ = error "Expected ' Account Number' to be of the format \"'{sort code}-{account number}\""
+
+-- natwestTransactionType = 
+--           [("103"   ,"MT103 Payment")
+--           ,("ACI"   ,"Interest on Account Balance")
+--           ,("ADV"   ,"Separate Advice")
+--           ,("AMD"   ,"Amendments History")
+--           ,("ATM"   ,"Cash Withdrawal")
+--           ,("BAC"   ,"Automated Credit")
+--           ,("BAE"   ,"Branch Account Entry")
+--           ,("BCO"   ,"Non Market Close Out")
+--           ,("BGC"   ,"Bank Giro Credit")
+--           ,("BGT"   ,"Guarantees")
+--           ,("BLN"   ,"Bankline Charges")
+--           ,("BOE"   ,"Bill of Exchange")
+--           ,("BSP"   ,"Branch single payment")
+--           ,("C/R"   ,"Credit")
+--           ,("C/L"   ,"Automated teller machine cash withdrawal")
+--           ,("CAE"   ,"Cheque Collection")
+--           ,("CCB"   ,"Cheque Collection")
+--           ,("CDM"   ,"Cash and Deposit Machine")
+--           ,("CHG"   ,"Charges")
+--           ,("CHP"   ,"CHAPS Transfer (NatWest only)")
+--           ,("CHQ"   ,"Cheque")
+--           ,("CNA"   ,"Clean Cheque Neg")
+--           ,("CND"   ,"Cheque Negotiation")
+--           ,("COM"   ,"Commission")
+--           ,("CRD"   ,"Card Payment or Cash")
+--           ,("D/D"   ,"Direct Debit")
+--           ,("D/R"   ,"Debit")
+--           ,("DCR"   ,"Documentary Credit")
+--           ,("DFT"   ,"Foreign Draft")
+--           ,("DIV"   ,"Dividend")
+--           ,("DPC"   ,"Digital Banking Payment")
+--           ,("EBP"   ,"Electronic Payment")
+--           ,("FPAY"  ,"Faster Payment - Future Dated (Appears on statements as EBP)")
+--           ,("GSD"   ,"Gov Stamp Duty")
+--           ,("IBP"   ,"Inter Branch Payment")
+--           ,("ICP"   ,"Inward Currency Payment")
+--           ,("INT"   ,"Interest")
+--           ,("INV"   ,"Investment")
+--           ,("IPAY"  ,"Faster Payment -Immediate (Appears on statements as EBP)")
+--           ,("ISP"   ,"Inward Sterling Payment")
+--           ,("ITL"   ,"International Transfer & Treasury Settlements (and RBS CHAPS Payments)")
+--           ,("ITM"   ,"Incoming CHAPS")
+--           ,("LON"   ,"New Loan")
+--           ,("LST"   ,"Supplementary List")
+--           ,("LVP"   ,"Low Value Payment")
+--           ,("MEC"   ,"Export Credits")
+--           ,("MFD"   ,"Maturing Fwd Deal")
+--           ,("MGT"   ,"Bonds & Guarantees")
+--           ,("MIB"   ,"Inward Bills")
+--           ,("MIC"   ,"Import Credits")
+--           ,("MKD"   ,"Market Deal")
+--           ,("MOB"   ,"Outward Bills")
+--           ,("MSC"   ,"Miscellaneous Entry")
+--           ,("NDC"   ,"No Dividend Counterfoil")
+--           ,("NPAY"  ,"Faster Payment - Next Day (Appears on statement as EBP)")
+--           ,("POS"   ,"Maestro Transaction")
+--           ,("RTF"   ,"Relay Transfer")
+--           ,("S/O"   ,"Standing Order")
+--           ,("SBT"   ,"Funds Transfer")
+--           ,("SCR"   ,"Sundry Credit Item")
+--           ,("SDE"   ,"Urgent Euro Transfer")
+--           ,("SDR"   ,"Sundry Debit Item")
+--           ,("STF"   ,"Manually Keyed Standard Transfer")
+--           ,("STL"   ,"Settlement")
+--           ,("TFP"   ,"Trade Finance Product")
+--           ,("TFR"   ,"Transfer")
+--           ,("TRF"   ,"International Payment (NatWest only)")
+--           ,("TLR"   ,"Card Payment or Cash")
+--           ,("TEL"   ," Telephone Banking transaction")
+--           ,("TSU"   ,"Telephone Banking")
+--           ,("U/D"   ,"Unpaid Direct Debit")
+--           ,("UTF"   ,"Urgent Transfer")
+--           ,("WSF"   ,"Foreign Exchange Deal")
+--           ,("WSM"   ,"Money Market Deal")]
 
 -- * Comdirect Visa Statements
 
@@ -991,6 +1147,8 @@ defaultFields = fromListUnique . fmap (first $ (() <$))
                ,toBayes barclaycardus
                ,toBayes pncbank
                ,toBayes revolut
+               ,toBayes natwestIntl
+               ,toBayes barclaysUk
                ,toBayes monefy]
 
 -- extract the values of all available bayes fields of a given

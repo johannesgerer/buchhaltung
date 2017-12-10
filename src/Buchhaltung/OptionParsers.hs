@@ -156,6 +156,12 @@ importOpts =
                      ,"versions: manuell, export"])
 
   <>
+  command' "barclaysUk" (pure BarclaysUk)
+  (progDesc $ concat ["import from Barclays UK CSV export. " ,"versions: 2017"])
+  <>
+  command' "natwestIntl" (pure NatwestIntl)
+  (progDesc $ concat ["import from Natwest Internation CSV export. " ,"versions: 2017"])
+  <>
   command' "monefy"
   (fmap Monefy $ MonefySettings . T.pack <$> strArgument
     (help "monefy instance or phone name (as configured in 'bankAccounts')"
@@ -179,7 +185,7 @@ importOpts =
   (progDesc $ concat ["import from german Paypal CSV export with "
                      ,"\"alle guthaben relevanten Zahlungen "
                      ,"(kommagetrennt) ohne warenkorbdetails\". "
-                     ,"versions: 2013, 2014, 2016"])
+                     ,"versions: 2013, 2014, 2016, 2017"])
 
   <>
   command' "pncbank"

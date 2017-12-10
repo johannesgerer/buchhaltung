@@ -46,6 +46,10 @@ run (Add partners) options =
 run (Import version file action) options = runImport action
   where runImport (Paypal puser) =
           importReadWrite paypalImporter (options' puser) file
+        runImport NatwestIntl =
+          importReadWrite natwestIntlImporter (options' ()) file
+        runImport BarclaysUk =
+          importReadWrite barclaysUkImporter (options' ()) file
         runImport BarclaycardUs =
           importReadWrite barclaycardusImporter (options' ()) file
         runImport (ComdirectVisa blz) =

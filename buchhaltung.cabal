@@ -34,70 +34,70 @@ custom-setup
   setup-depends:  base >= 4.0.0.0 && < 5, Cabal
 
 
-library
-  Hs-Source-Dirs:   src
-  exposed-modules: Buchhaltung.Add
-                 Buchhaltung.AQBanking
-                 Buchhaltung.Ask
-                 Buchhaltung.Common
-                 Buchhaltung.Import
-                 Buchhaltung.Importers
-                 Buchhaltung.Match
-                 Buchhaltung.Commandline
-                 Buchhaltung.OptionParsers
-                 Buchhaltung.Types
-                 Buchhaltung.Uniques
-                 Buchhaltung.Utils
-                 Buchhaltung.ZipEdit2
-                 Buchhaltung.Zipper
-  default-language: Haskell2010
-  build-depends:
-                  Decimal >= 0.4.2
-                , ListLike
-                , MissingH
-                , aeson >= 1.0.0
-                , ansi-wl-pprint
-                , array
-                , async
-                , base >= 4.0.0.0 && < 5
-                , boxes
-                , bytestring
-                , lens
-                , cassava >= 0.4.1.0
-                , containers
-                , data-default
-                , deepseq
-                , directory
-                , edit-distance
-                , file-embed
-                , filepath
-                , formatting
-                , hashable
-                , haskeline
-                , hint
-                , hledger >= 1.4
-                , hledger-lib >= 1.4
-                , lifted-base
-                , megaparsec >= 5.0.0
-                , monad-control
-                , mtl
-                , optparse-applicative >= 0.13
-                , parsec
-                , process >= 1.1.0.2
-                , regex-compat
-                , regex-tdfa
-                , regex-tdfa-text
-                , safe
-                , semigroups
-                , split
-                , strict
-                , temporary
-                , text
-                , time
-                , transformers
-                , unordered-containers
-                , vector
-                , yaml
+-- library
+--   Hs-Source-Dirs:   src
+--   exposed-modules: Buchhaltung.Add
+--                  Buchhaltung.AQBanking
+--                  Buchhaltung.Ask
+--                  Buchhaltung.Common
+--                  Buchhaltung.Import
+--                  Buchhaltung.Importers
+--                  Buchhaltung.Match
+--                  Buchhaltung.Commandline
+--                  Buchhaltung.OptionParsers
+--                  Buchhaltung.Types
+--                  Buchhaltung.Uniques
+--                  Buchhaltung.Utils
+--                  Buchhaltung.ZipEdit2
+--                  Buchhaltung.Zipper
+--   default-language: Haskell2010
+--   build-depends:
+--                   Decimal >= 0.4.2
+--                 , ListLike
+--                 , MissingH
+--                 , aeson >= 1.0.0
+--                 , ansi-wl-pprint
+--                 , array
+--                 , async
+--                 , base >= 4.0.0.0 && < 5
+--                 , boxes
+--                 , bytestring
+--                 , lens
+--                 , cassava >= 0.4.1.0
+--                 , containers
+--                 , data-default
+--                 , deepseq
+--                 , directory
+--                 , edit-distance
+--                 , file-embed
+--                 , filepath
+--                 , formatting
+--                 , hashable
+--                 , haskeline
+--                 , hint
+--                 , hledger >= 1.4
+--                 , hledger-lib >= 1.4
+--                 , lifted-base
+--                 , megaparsec >= 5.0.0
+--                 , monad-control
+--                 , mtl
+--                 , optparse-applicative >= 0.13
+--                 , parsec
+--                 , process >= 1.1.0.2
+--                 , regex-compat
+--                 , regex-tdfa
+--                 , regex-tdfa-text
+--                 , safe
+--                 , semigroups
+--                 , split
+--                 , strict
+--                 , temporary
+--                 , text
+--                 , time
+--                 , transformers
+--                 , unordered-containers
+--                 , vector
+--                 , yaml
 
 executable buchhaltung
   Hs-Source-Dirs:   src
@@ -118,6 +118,11 @@ executable buchhaltung
                  Buchhaltung.Zipper
   default-language: Haskell2010
   ghc-options:     -threaded
+                   -fwarn-unused-binds
+                   -fwarn-unused-matches
+                   -fwarn-incomplete-patterns
+
+  
   build-depends:
                   Decimal >= 0.4.2
                 , ListLike

@@ -116,7 +116,7 @@ suggestAccount tx = do
                 info = either fshow (text . lookup sa)
                   (dbacl_parse accs output)
                 text Nothing = "failed\t\t"
-                text (Just te) = "uncertainty: " <> T.pack te <> "\t\t"
+                text (Just te) = "uncertainty: " <> T.pack te <> "\t"
   maybe g (return . Just . Default "manual:\t\t\t") $ wInfo tx
   
 bayesLine :: Monad m => WithSource a -> MatchT m T.Text
@@ -126,7 +126,7 @@ learn :: [(AccountName, NonEmpty (WithSource a))]
       -> MatchT IO ()
 learn pairs = do
   accs <- liftIO . runConcurrently . sequenceA =<< mapM learn' pairs
-  forM_ accs $ \(k,v) -> modify $ first $ M.insertWith (\a b -> a) k v
+  forM_ accs $ \(k,v) -> modify $ first $ M.insertWith const k v
   where learn' (name,txs) = do 
           bin <- readConfig cDbaclExecutable
           text <- (L.unlines . filter (not . T.null)) <$>
@@ -186,7 +186,11 @@ groupByAccount j = do
 myAskAccount :: Maybe Default -> MatchT IO AccountName
 myAskAccount acc = getAccountList (const True) >>= \accs -> 
   liftIO $ askAccount accs (defAcc <$> acc) (Just histfsuf) prompt
-  where prompt = Right $ maybe "" showdef acc <> "\nEnter an account name, '<', '>' to navigate, or 'save':\n"
+  where prompt = Right $ T.unlines
+          [""
+          ,maybe "" ((<> "\n\nHit 'Enter' to use the above account, or") . showdef) acc
+          ,"enter one of the following: account name (in reverse notation), "<>
+           "'<', '>' to navigate, or 'save'"]
         showdef (Default d a) = d <> (revAccount2 a) :: T.Text
 
 getAccountList :: Monad m => (Bool -> Bool) -> MatchT m [AccountName]

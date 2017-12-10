@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 module Buchhaltung.Uniques
 where
@@ -18,6 +19,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
+import           Debug.Trace
 import           Formatting as F
 import qualified Formatting.ShortFormatters as F
 import           Hledger.Data
@@ -63,15 +65,12 @@ addNewEntriesToJournal newTxs journal = do
   fmap (fmap unAged . M.elems . fst)
     <$> execRWST (evalContT $ callCC $ \exit -> zipWithM_
                    (loop exit $ length newTxs) [1..] newTxs)
-    () $ M.fromList
-    $ zipWith toKeyVal [1..] (jtxns journal)
+    () $ M.fromList $ zipWith toKeyVal [1..] $ jtxns journal
 
- 
 -- | Derive a key from a transaction and an index
 deriveKey :: Transaction -> Key
 deriveKey tx = (compAmount $ pamount p, paccount p, tdate tx)
-  where compAmount (Mixed am) = sort
-          $ fmap (acommodity &&& aquantity) am
+  where compAmount (Mixed am) = sort $ fmap (acommodity &&& aquantity) am
         p = head $ tpostings tx
 
 -- | loop through all existing possible duplicates of a new
@@ -81,9 +80,8 @@ loop :: (MonadIO m, MonadReader (Options user Config env) m)
      -> Int -> Int -> FilledEntry -> M r m ()
 loop exit totalTx iTx new = do
   let msg = format ("Transaction: "%F.d%" of "%F.d%" new\n") iTx totalTx
-      key = deriveKey $ ieT new
-  dups <- findDuplicates key
-  checkOrAsk exit (key, new) msg
+  dups <- findFuzzy $ ieT new
+  checkOrAsk exit new msg
     $ sortBy (flip $ comparing snd) $ (id &&& distance) <$> dups
     where distance (_, y) =
             -- careful: the negate is fmapped over the Maybe value
@@ -103,24 +101,31 @@ findDuplicates key@(ams,acc,day) = lift $ gets $ \old ->
    let later = snd $ M.split (key,0) old in
    M.toList $ fst $ M.split ((ams,acc,addDays 1 day),0) later
 
+findFuzzy :: Monad m => Transaction -> M r m [(KeyIx,Aged Entry)]
+findFuzzy = fmap concat . mapM (findDuplicates . deriveKey) . alternatives
+  where alternatives x = [x, conditionalDateShift x]
+        conditionalDateShift tx = if paccount (head (tpostings tx)) == "Aktiva:Konten:Comdirect:Visa"
+                                  then tx { tdate = addDays (-1) $ tdate tx }
+                                  else tx
+
 -- | check single new entry against a list of conflict
 -- candidates, and insert new entry (if list is empty), or keep old
 -- entry (if identical to new one), or ask weither to modify old entry
 -- or insert new entry.
 checkOrAsk :: (MonadIO m, MonadReader (Options user Config env) m)
            => (() -> M r m ())
-           -> (Key, FilledEntry)
+           -> FilledEntry
            -> TL.Text -- ^ message
            -> [((KeyIx, Aged Entry), Maybe Int)] -> M r m ()
-checkOrAsk _ (newKey, new) _ []  = do
+checkOrAsk _ new _ []  = do
   newIx <- gets $ \old -> M.size old + 1
-  modify $ uncurry M.insert $ ((newKey, newIx), Aged New $ fromFilled new)
+  modify $ uncurry M.insert $ ((deriveKey $ ieT new, newIx), Aged New $ fromFilled new)
   liftIO $ T.putStrLn "\nSaved new transaction.\n"
 checkOrAsk exit new msg (( (oldKey, oldEntry), cost):remaining) = do
   if getAge oldEntry == Old && cost == Just 0
     then return () -- do nothing, i.e. use old unchanged
     else if False && cost > Just ( - 98)
-            && on (==) (tdate.ieT) (unAged oldEntry) (fromFilled $ snd new)
+            && on (==) (tdate.ieT) (unAged oldEntry) (fromFilled new)
          then do
       -- liftIO $ do print (fst new) >> print (oldKey)
       --             print (tdate.ieT.snd $ new) >> print (tdate.ieT $ oldEntry)
@@ -129,7 +134,7 @@ checkOrAsk exit new msg (( (oldKey, oldEntry), cost):remaining) = do
     else do
     let question = (answer =<<) . liftIO $ do
           L.putStr $ L.unlines
-            [ prettyPrint cost (snd new) oldEntry msg $ length remaining
+            [ prettyPrint cost new oldEntry msg $ length remaining
             , "Yes, they are duplicates. Update the source [y]"
             , "No, " <> (if null remaining then "Save as new transaction"
                          else "Show next duplicate") <> " [n]"
@@ -147,7 +152,7 @@ checkOrAsk exit new msg (( (oldKey, oldEntry), cost):remaining) = do
   where
     overwriteOldSource = lift $ do
           tag <- lift $ askTag
-          modify $ M.adjust (applyChanges tag new $ fst oldKey) oldKey
+          modify $ M.adjust (applyChanges tag new (deriveKey $ ieT new) $ fst oldKey) oldKey
           liftIO $ T.putStrLn "\nUpdated duplicate's source.\n"
 
 prettyPrint :: Maybe Int -> FilledEntry -> Aged Entry -> TL.Text -- ^ Message
@@ -185,10 +190,10 @@ prettyPrint cost new (Aged age old) msg remain =
         ++ showError oldSource
 
 
-applyChanges :: ImportTag -> (Key, FilledEntry)
-             -> Key -> Aged Entry -> Aged Entry
-applyChanges tag ((ams2,acc2,day2), newEntry)
-  (ams1, acc1, _) oldEntry =
+applyChanges :: ImportTag -> FilledEntry -> Key -- ^ new key
+             -> Key -- ^ old key
+             -> Aged Entry -> Aged Entry
+applyChanges tag newEntry (ams2,acc2,day2) (ams1, acc1, _) oldEntry =
   if (ams2,acc2) /= (ams1,acc1) then
     error $ unlines ["Change not supported: "
                     , show newEntry

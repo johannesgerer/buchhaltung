@@ -94,6 +94,7 @@ instance FromJSON Source where
     Source <$>
       (SFormat <$> v .: "formatName" <*>  v .: "formatVersion")
       <*> v.: "store"
+  parseJSON invalid    = A.typeMismatch "Source" invalid
 
 instance ToJSON Source where
   toJSON s =  Object $ HM.insert "store" (toJSON $ sStore s) $ toJSON
@@ -152,7 +153,7 @@ lookupErrM description lookup k container =
 fromListUnique :: (MonadError Msg m, Show k, Ord k)
                => [(k, a)] -> m (M.Map k a)
 fromListUnique = sequence . M.fromListWithKey
-                 (\k a b -> throwFormat ("Duplicate key '"%shown%"' in M.fromList") ($ k))
+                 (\k _ _ -> throwFormat ("Duplicate key '"%shown%"' in M.fromList") ($ k))
                  . fmap (second pure)
 
 -- * Options
@@ -467,6 +468,8 @@ data ImportAction = Paypal PaypalUsername
                   | AQBankingImport
                   | ComdirectVisa { comdirectVisaBlz :: T.Text }
                   | BarclaycardUs
+                  | NatwestIntl
+                  | BarclaysUk
                   | Pncbank { pncAccountIdentifier :: T.Text }
                   | Monefy MonefySettings
                   | Revolut RevolutSettings

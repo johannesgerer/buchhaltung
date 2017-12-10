@@ -118,7 +118,7 @@ add = do
         return (name user ,  journal )
   journals <- fmap M.fromList . mapM f $ (user, [Just . imported])
               : (fmap (\x -> (pUser x, []) ) partners)
-  withRWST (\r s -> (r{oEnv = partners}, journals)) $ do
+  withRWST (\r _ -> (r{oEnv = partners}, journals)) $ do
     liftIO . putStr =<< hello
     forever mainLoop
 

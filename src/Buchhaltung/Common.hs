@@ -269,7 +269,7 @@ trimnl = mconcat . T.lines
 -- http://hackage.haskell.org/package/cassava-0.4.1.0/docs/Data-Csv.html#t:NamedRecord
 -- parseCsv :: CSV.FromField a => String -> V.Vector (HM.HashMap B.ByteString a)
 
-type MyRecord = (HM.HashMap T.Text T.Text)
+type MyRecord = HM.HashMap T.Text T.Text
 
 stripCsv :: ([T.Text], [MyRecord]) -> ([T.Text], [MyRecord])
 stripCsv = fmap textstrip ***
