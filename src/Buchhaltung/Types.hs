@@ -49,7 +49,7 @@ import           Prelude hiding (lookup)
 import           System.FilePath
 import           Text.Printf
 import qualified Text.Regex.TDFA as R
-import           Text.Regex.TDFA.Text ()
+import           Text.Regex.TDFA.Text () -- for instances
 
 -- * Monad used for most of the funtionality
 
@@ -472,7 +472,7 @@ data ImportAction = Paypal PaypalUsername
                   | BarclaysUk
                   | Pncbank { pncAccountIdentifier :: T.Text }
                   | Monefy MonefySettings
-                  | Revolut RevolutSettings
+                  | Revolut (RevolutSettings ())
   deriving (Show, Generic, NFData)
 
 data MonefySettings = MonefySettings
@@ -481,9 +481,10 @@ data MonefySettings = MonefySettings
   deriving (Show, Generic, NFData)
 
 
-data RevolutSettings = RevolutSettings
-  { revolutUser :: T.Text }
-  deriving (Show, Generic, NFData)
+data RevolutSettings a = RevolutSettings
+  { revolutCurrency :: a 
+  , revolutUser :: T.Text }
+  deriving (Show, Generic, NFData, Functor)
 
 
 -- * Misc

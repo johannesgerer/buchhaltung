@@ -25,6 +25,7 @@ import           Buchhaltung.Import
 import           Control.Arrow
 import           Control.Monad.Cont
 import           Control.Monad.RWS.Strict
+import           Data.Foldable
 import           Data.Functor.Identity
 import qualified Data.HashMap.Strict as HM
 import           Data.List
@@ -38,11 +39,15 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
 import           Data.Time.Calendar
+import           Debug.Trace
 import           Formatting (sformat, (%), shown)
 import qualified Formatting.ShortFormatters as F
+import           Safe as S
 import           Text.Parsec
 import qualified Text.ParserCombinators.Parsec as C
 import           Text.Printf
+import qualified Text.Regex.TDFA as R
+import           Text.Regex.TDFA.Text ()
 
 -- * CSV
 
@@ -384,23 +389,37 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
 
 -- * Revolut Csv
   
-revolutImporter :: Importer RevolutSettings
-revolutImporter = Importer Nothing $ csvImport revolut
+revolutImporter :: Importer (RevolutSettings ())
+revolutImporter = Importer Nothing $ csvImportPreprocessed extractCurrency revolut
 
-revolut :: VersionedCSV RevolutSettings
+extractCurrency :: Preprocessor (RevolutSettings ()) (RevolutSettings T.Text)
+extractCurrency (text, env) = do
+  cur <- maybe (throwError $ "Cannot find currency (regular expression: "
+                 <> T.pack (show currencyColumn) <> " in header:\n" <> header)
+         (return . fst) $ (flip atMay 1 . toList =<<)
+         $ listToMaybe $ currencyRegex header
+  return (T.unlines $ T.replace (" (" <> cur <> ")") "" header:rest
+         , const cur <$> env)
+  where header:rest = T.lines text 
+
+currencyRegex = R.matchAllText (R.makeRegex currencyColumn :: R.Regex)
+
+currencyColumn = "\\bPaid Out \\(([^)]+)\\)" :: T.Text 
+  
+
+revolut :: VersionedCSV (RevolutSettings T.Text)
 revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
-  [CSV
-        { cFilter  = (/= "") . getCsv "Completed Date"
-        , cDate = parseDate "%e %b %Y" . getCsv "Completed Date"
+  [ CSV { cFilter  = (/= "") . getCsv "Completed Date"
+        , cDate = (\x -> headNote ("no parse of " <> T.unpack x) $ mapMaybe
+                    (\format -> parseDateM format x) ["%b %e, %Y", "%e %b %Y"]) . getCsv "Completed Date"
         , cStrip = True
         , cVDate = const Nothing
         , cBank = const $ const "Revolut"
         , cPostings =
           [ \env -> CsvPosting
             { cAccount = const $ revolutUser env
-            , cAmount = normalizeCurrency .
-                        getCsvCreditDebit "Paid Out" "Paid In"
-            , cSuffix = Nothing
+            , cAmount = (<> revolutCurrency env) . getCsvCreditDebit "Paid Out" "Paid In"
+            , cSuffix = Just $ const $ revolutCurrency env
             , cNegate = const False
             }
           ]
@@ -409,20 +428,19 @@ revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
                     ,"Reference"
                     ,"Paid Out"
                     ,"Paid In"
+                    ,"Exchange Out"
+                    ,"Exchange In"
                     ,"Balance"
+                    ,"Category"
                     ]
         , cDescription = [Const "Revolut"
-                         , Field "Reference"]
-        , cBayes = ["Reference"]
+                         , Field "Reference"
+                         , Const ", Category"
+                         , Field "Category" ]
+        , cBayes = ["Reference", "Category" ]
         , cVersion = "2017"
         }
   ]
-  where amt = (\a b -> textstrip $ T.replace "," "" a <> " " <> b)
-              <$> getCsv "amount" <*> getCsv "currency"
-
-currencySymbols = [ ("$", "USD")
-                  , ("€", "EUR")
-                  , ("£", "GBP") ]
   
 -- remove currency signs and append corresponding currency name
 normalizeCurrency :: T.Text -> T.Text
@@ -433,6 +451,9 @@ normalizeCurrency text = (`runCont` id) $ callCC $ \exit -> do
   mapM_ (\x -> g x text) currencySymbols
   return text
 
+currencySymbols = [ ("$", "USD")
+                  , ("€", "EUR")
+                  , ("£", "GBP") ]
   
 -- * Monefy Csv
   
@@ -559,7 +580,7 @@ natwestIntl = toVersionedCSV (SFormat "natwestIntl" $ DefaultVersion "2017")
                     ," Account Number"
                     ]
         , cDescription = [Field " Description"
-                         ,Const ", Type "
+                         ,Const ", Type"
                          ,Field " Type"]
         , cBayes = [" Description"
                    ," Type"]

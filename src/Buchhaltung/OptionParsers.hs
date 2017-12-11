@@ -172,7 +172,7 @@ importOpts =
                      ,"versions: 2017"])
   <>
   command' "revolut"
-  (fmap Revolut $ RevolutSettings . T.pack <$> strArgument
+  (fmap Revolut $ RevolutSettings () . T.pack <$> strArgument
     (help "Revolut user (as configured in 'bankAccounts')"
       <> metavar "USER"))
   (progDesc $ concat ["manually constructed CSV from Revolut's PDF export."])

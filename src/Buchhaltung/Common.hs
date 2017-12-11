@@ -346,9 +346,11 @@ windoof :: Maybe (Handle -> IO ())
 windoof = Just $ \h -> hSetEncoding h latin1
                        >> hSetNewlineMode h universalNewlineMode
 
-
 parseDate :: String -> T.Text -> Day
 parseDate format = parseTimeOrError True defaultTimeLocale format . T.unpack
+
+parseDateM :: Monad m => String -> T.Text -> m Day
+parseDateM format = parseTimeM True defaultTimeLocale format . T.unpack
 
 parseDateDE = parseDate "%d.%m.%Y"
 parseDateUS = parseDate "%m/%d/%Y"
