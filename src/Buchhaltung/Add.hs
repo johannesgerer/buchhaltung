@@ -18,7 +18,6 @@ import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.RWS.Strict
 import           Data.Bits
-import           Data.Void
 import           Data.Char
 import           Data.Decimal
 import           Data.Default
@@ -40,6 +39,7 @@ import qualified Data.Text as T
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Time.Format
+import           Data.Void
 import           Formatting (sformat, (%), (%.))
 import qualified Formatting as F
 import qualified Formatting.ShortFormatters as F
@@ -325,9 +325,9 @@ sugTrans = sugTrans' . fmap negate =<< askAmount (Just def)
           user <- readUser id
           let
             f user Transaction{tpostings=p1:(p2:_)} =
-              -- the first posting's account is part of the accounts
+              -- the first posting's account contains as prefix one of the accounts
               -- automatically handled by csv2ledger
-              (paccount p1 `S.member` accs)
+              (any (`T.isPrefixOf` paccount p1) accs)
               -- the first amount of the first posting matched the entered
               -- amount in absolute values
               && (on (==) (abs.aquantity.head.amounts) iAm ( pamount p1 )
