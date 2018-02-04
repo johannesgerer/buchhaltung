@@ -27,7 +27,7 @@ import           Text.Printf
 runMain :: IO ()
 runMain = do
   opts <- evaluate . force =<<
-    customExecParser (prefs $ showHelpOnError <> showHelpOnEmpty)
+    customExecParser (prefs showHelpOnEmpty)
     =<< mainParser
     :: IO (RawOptions ())
   let

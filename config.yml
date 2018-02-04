@@ -1,3 +1,12 @@
+# optional: custom executables (names or full paths). The following shows the default values
+
+ledgerExecutable:     ledger
+hledgerExecutable:    hledger
+dbaclExecutable:      dbacl
+aqBankingExecutable:  aqbanking-cli
+aqhbciToolExecutable: aqhbci-tool4
+
+# user config
 users:
   - name: jo
     ledgers:
@@ -26,6 +35,11 @@ users:
 
     # optional: account prefix used when 'add'ing transactions for other users
     accountPrefixOthers: Accounts receivable:Friends
+
+    # reverse the order of account paths
+    # (e.g. `Expenses:Food` has to be entered as `Food:Expenses`)
+    # (default: True)
+    reverseAccountInput: True
 
     # regex matchind accounts whose should not be suggested when 'match'ing
     ignoredAccountsOnMatch:

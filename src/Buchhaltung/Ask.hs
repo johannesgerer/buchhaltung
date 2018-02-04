@@ -2,8 +2,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Buchhaltung.Ask where
 
+import           Buchhaltung.Types
 import           Control.Arrow
 import           Control.Monad
+import           Control.Monad.Reader
 import           Control.Monad.Trans.Class
 import           Data.Char
 import           Data.Function
@@ -82,18 +84,22 @@ editHaskeline show modify v = liftM (modify v . fromJust) $
                               runInputT2 defaultSettings{historyFile = Just ".haskeline_history"} $
                               getInputLineWithInitial "edit: " (show v,"")
 
-askAccount :: [AccountName] -- ^ completion list
+askAccount :: (MonadReader (Options User config env) m, MonadIO m)
+             => [AccountName] -- ^ completion list
              -> Maybe AccountName -- ^ default value, if "" is entered
              -> Maybe String -- ^ history file suffix
              -> Either T.Text T.Text -- ^ prompt
-             -> IO AccountName
-askAccount completionList def suf pr =
-  revAccount2 <$> editLoop (maybe notNull (const Right) def)
-  (fromMaybe "Account" suf)
-  ((id &&& id) . revAccount2 <$> def)
-  (Just $ revAccount2 <$> completionList) pr Nothing --def
+             -> m AccountName
+askAccount completionList def suf pr = do
+  revAccount <- askReverseAccount
+  fmap revAccount . liftIO $ editLoop (maybe notNull (const Right) def)
+    (fromMaybe "Account" suf)
+    ((id &&& id) . revAccount <$> def)
+    (Just $ revAccount <$> completionList) pr Nothing --def
   where notNull s = if s=="" then Left "Blank Account not allowed"
                     else Right s
                                        
-revAccount2 :: T.Text -> T.Text
-revAccount2 = T.intercalate ":" . reverse . T.splitOn ":"
+askReverseAccount :: MonadReader (Options User config env) m => m (T.Text -> T.Text)
+askReverseAccount = g <$> readUser reverseAccountInput
+  where g x = if fromMaybe True x then T.intercalate ":" . reverse . T.splitOn ":"
+              else id

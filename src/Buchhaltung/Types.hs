@@ -271,6 +271,7 @@ data User = User
   , ignoredAccountsOnAdd :: Maybe [Regex]
   , ignoredAccountsOnMatch :: Maybe [Regex]
   , numSuggestedAccounts :: Maybe Int
+  , reverseAccountInput :: Maybe Bool
   }
   deriving ( Generic, Show, FromJSON)
 

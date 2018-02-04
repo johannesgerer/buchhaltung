@@ -23,7 +23,7 @@ mainParser = do
   env <- getEnvironment
   home <- try getHomeDirectory :: IO (Either SomeException FilePath)
   return $ info
-    ( helper *> (Options
+    ( helper *> version *> (Options
                 <$> userP
                 <*> profile env home
                 <*> subparser commands
@@ -32,7 +32,10 @@ mainParser = do
               )
     ) mempty
 
+paragraph :: String -> D.Doc
 paragraph = foldr ((D.</>) . D.text) mempty . words
+
+version = infoOption "buchhaltung, version 0.0.6" $ long "version" <> short 'v' <> help "Show version"
 
 userP :: Parser (Maybe Username)
 userP = optional $ (Username . T.pack) <&> strOption $ long "user"

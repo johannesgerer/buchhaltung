@@ -184,14 +184,15 @@ groupByAccount j = do
     <$> jtxns j 
 
 myAskAccount :: Maybe Default -> MatchT IO AccountName
-myAskAccount acc = getAccountList (const True) >>= \accs -> 
-  liftIO $ askAccount accs (defAcc <$> acc) (Just histfsuf) prompt
-  where prompt = Right $ T.unlines
-          [""
-          ,maybe "" ((<> "\n\nHit 'Enter' to use the above account, or") . showdef) acc
-          ,"enter one of the following: account name (in reverse notation), "<>
-           "'<', '>' to navigate, or 'save'"]
-        showdef (Default d a) = d <> (revAccount2 a) :: T.Text
+myAskAccount acc = getAccountList (const True) >>= \accs -> do
+  revAccount <- askReverseAccount
+  let prompt = Right $ T.unlines
+        [""
+        ,maybe "" ((<> "\n\nHit 'Enter' to use the above account, or") . showdef) acc
+        ,"enter one of the following: account name (in reverse notation), "<>
+         "'<', '>' to navigate, or 'save'"]
+      showdef (Default d a) = d <> (revAccount a) :: T.Text
+  askAccount accs (defAcc <$> acc) (Just histfsuf) prompt
 
 getAccountList :: Monad m => (Bool -> Bool) -> MatchT m [AccountName]
 getAccountList f = gets $ M.keys . M.filter f . fst

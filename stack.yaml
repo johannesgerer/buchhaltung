@@ -1,13 +1,1 @@
-flags: {}
-packages:
-- '.'
-# - location:
-#     git: https://github.com/simonmichael/hledger.git
-#     commit: 282e85c6028227938457fb3b94eb333c4ba4ae65
-#   subdirs:
-#   - hledger-lib
-#   extra-dep: true
-
-
-resolver: nightly-2017-12-09
-pvp-bounds: both
+resolver: lts-10.4

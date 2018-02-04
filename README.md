@@ -6,7 +6,15 @@
 *Buchhaltung* (['bu&#720;&chi;ˌhaltʊŋ], German *book keeping*), written in Haskell, helps you keep track of your finances on the command line with minimal effort. It provides tools that help you in creating a complete ledger of all your bank and savings accounts', credit cards', and other transactions, in a text-based ledger format, that is readable by the [ledger CLI tool](http://www.ledger-cli.org/) and its many [derivatives](http://plaintextaccounting.org/).
 
 * Fetch your bank transaction directly via FinTS/HBCI/OFXDirectConnect
-* Import transactions from PayPal, Barclaycard Visa, comdirect Visa, Revolut, Barclays UK CSV, NatWest International CSV, and Monefy expense tracker app, (or define your own formats)
+* Import transactions from 
+  * PayPal
+  * Barclaycard Visa
+  * comdirect Visa
+  * Revolut
+  * Barclays UK CSV
+  * NatWest International CSV
+  * and Monefy expense tracker app
+  * ... or define your own formats
 * Semi-automatically match transactions to accounts using Bayesian classification
 * Semi-automatic transaction entry with meaningful suggestions in keyboard-based speed mode
  * It is couples/room-mates aware: Create several transaction simultaneously (see [Multi-user add](#multi-user-add))
@@ -157,13 +165,13 @@ When importing, *Buchhaltung* will identify duplicates based on `([(Commodity,Qu
 buchhaltung match
 ```
 
-This command asks the user for the offsetting accounts of imported transactions, or more specifically, transaction whose second posting's account begins with `TODO`. 
+This command asks the user for the offsetting accounts of imported transactions, or more specifically, transaction whose second posting's account begins with `TODO` and does not match any regex in [`ignoredAccountsOnMatch`](config.yml). 
 
 Have a look at the example output [here](example_output/match.md).
 
 The significantly speed up this process, it learns the account mapping from existing transactions in the configured [`ledgers.imported`](config.yml) file using the original source of the imported transaction.
-Please note that you will have to enter account information in **reverse order**: for example `Expenses:Food` has to be entered as `Food:Expenses`.
 
+Please note that you will have to enter account information in **reverse order**: for example `Expenses:Food` has to be entered as `Food:Expenses`.
 See [this](#input-and-tab-completion) information about the account input field.
 
 
@@ -199,7 +207,7 @@ The amount of manual typing is kept to a minimum by two clever suggestion mechan
 
 All input fields save their history in the current directory. It can be browsed using up and down arrow keys.
 
-The account input fields support TAB completion. To make this even more useful, the account hierarchy is read in reverse order. For example `Expenses:Food` has to be entered as `Food:Expenses`.
+The account input fields support TAB completion. To make this even more useful, the account hierarchy is read in reverse order. For example `Expenses:Food` has to be entered as `Food:Expenses`. This behaviour can be deactivated by setting [`reverseAccountInput`](config.yml) to `False`.
 
 ### Suggested transactions
 

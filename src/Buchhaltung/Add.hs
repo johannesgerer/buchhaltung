@@ -598,7 +598,7 @@ myAskAccount user a1 a2 a3= do
   j <- getJournal user
   let completionList = nub $
         sort [ paccount p | t <- jtxns j, p <- tpostings t]
-  liftIO $ askAccount completionList a1 a2 a3
+  askAccount completionList a1 a2 a3
 
 askAmount :: Maybe AssertedAmount -- ^ default value, if "" is entered
              -> T.Text  -- ^ prompt
