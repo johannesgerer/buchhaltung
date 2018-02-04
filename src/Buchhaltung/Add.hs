@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -298,9 +299,9 @@ clearNthPosting n t = t{tpostings=p'}
 -- * Transaction suggestions
 
 data Asserted a = AA { aComment :: Comment
-                   , aAssertion :: Maybe Amount
-                   , aAmount :: a }
-              deriving (Functor, Show)
+                     , aAssertion :: BalanceAssertion
+                     , aAmount :: a }
+                deriving (Functor, Show)
 
 instance Default AssertedAmount where
   def = AA "" Nothing $ mixed' nullamt
@@ -312,7 +313,7 @@ fromPosting = AA <$> pcomment <*> pbalanceassertion <*> pamount
 
 showAssertedAmount :: Asserted MixedAmount -> T.Text
 showAssertedAmount a = showMixedAmount2 (aAmount a) <>
-  maybe "" ((" = " <>) . showAmount2) (aAssertion a)
+  maybe "" ((" = " <>) . showAmount2 . fst) (aAssertion a)
 
 
 -- | Ask an amount, and return transactions matching the entered
@@ -627,9 +628,10 @@ askAmount def pr init = do
 parseAmount
   :: Journal
      -> T.Text -> Either (MP.ParseError Char Void) AssertedAmount
-parseAmount j = parseWithState' j $ ((flip $ AA "") <$>
-                (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
-                <*> partialbalanceassertionp
+parseAmount j = parseWithState' j $
+                ((flip $ AA "") <$>
+                  (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
+                  <*> partialbalanceassertionp
                                     ) <* MP.eof
 
 -- | (unused) overwrite upstream behavior to use defined or incurred
@@ -640,7 +642,7 @@ _amountp2 = MP.try leftsymbolamountp
 
 nosymbolamountp2 :: Monad m => JournalParser m Amount
 nosymbolamountp2 = do
-  (q,prec,mdec,mgrps) <- lift numberp
+  (q,prec,mdec,mgrps) <- lift $ numberp Nothing
   p <- priceamountp
   -- apply the most recently seen default commodity and style to this commodityless amount
   defcs <- getDefaultCommodityAndStyle2 <$> get
@@ -838,7 +840,7 @@ showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
          (epNumber x) (name $ getUser $ present $ epUser x) mark
          $ epAccount x
        ,maybe "" (showMissing . pamount) $ epPosting x
-       ,maybe "" (("= " <>) . showAmount2)
+       ,maybe "" (("= " <>) . showAmount2 . fst)
         $ pbalanceassertion =<< epPosting x
        ,maybe "" fshow $ epFreq x
        ] | (marked,x) <- postings ]
