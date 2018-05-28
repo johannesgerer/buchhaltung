@@ -409,22 +409,8 @@ currencyColumn = "\\bPaid Out \\(([^)]+)\\)" :: T.Text
 
 revolut :: VersionedCSV (RevolutSettings T.Text)
 revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
-  [ CSV { cFilter  = (/= "") . getCsv "Completed Date"
-        , cDate = (\x -> headNote ("no parse of " <> T.unpack x) $ mapMaybe
-                    (\format -> parseDateM format x) ["%b %e, %Y", "%e %b %Y"]) . getCsv "Completed Date"
-        , cStrip = True
-        , cVDate = const Nothing
-        , cBank = const $ const "Revolut"
-        , cPostings =
-          [ \env -> CsvPosting
-            { cAccount = const $ revolutUser env
-            , cAmount = (<> revolutCurrency env) . getCsvCreditDebit "Paid Out" "Paid In"
-            , cSuffix = Just $ const $ revolutCurrency env
-            , cNegate = const False
-            }
-          ]
-        , cSeparator = ';'
-        , cHeader = ["Completed Date"
+  [ v2017,
+    v2017 { cHeader = ["Completed Date"
                     ,"Reference"
                     ,"Paid Out"
                     ,"Paid In"
@@ -432,15 +418,51 @@ revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
                     ,"Exchange In"
                     ,"Balance"
                     ,"Category"
+                    ,"Notes"
                     ]
         , cDescription = [Const "Revolut"
                          , Field "Reference"
                          , Const ", Category"
+                         , Field "Notes"
                          , Field "Category" ]
-        , cBayes = ["Reference", "Category" ]
-        , cVersion = "2017"
+        , cBayes = ["Reference", "Category", "Notes" ]
+        , cVersion = "Apr 2018"
         }
   ]
+  where v2017 = 
+          CSV { cFilter  = (/= "") . getCsv "Completed Date"
+              , cDate = (\x -> headNote ("no parse of " <> T.unpack x) $ mapMaybe
+                          (\format -> parseDateM format x) ["%b %e, %Y", "%e %b %Y"]) . getCsv "Completed Date"
+              , cStrip = True
+              , cVDate = const Nothing
+              , cBank = const $ const "Revolut"
+              , cPostings =
+                [ \env -> CsvPosting
+                  { cAccount = const $ revolutUser env
+                  , cAmount = (<> revolutCurrency env) . getCsvCreditDebit "Paid Out" "Paid In"
+                  , cSuffix = Just $ const $ revolutCurrency env
+                  , cNegate = const False
+                  }
+                ]
+              , cSeparator = ';'
+              , cHeader = ["Completed Date"
+                          ,"Reference"
+                          ,"Paid Out"
+                          ,"Paid In"
+                          ,"Exchange Out"
+                          ,"Exchange In"
+                          ,"Balance"
+                          ,"Category"
+                          ,"Notes"
+                          ]
+              , cDescription = [Const "Revolut"
+                               , Field "Reference"
+                               , Const ", Category"
+                               , Field "Notes"
+                               , Field "Category" ]
+              , cBayes = ["Reference", "Category", "Notes" ]
+              , cVersion = "2017"
+              }
   
 -- remove currency signs and append corresponding currency name
 normalizeCurrency :: T.Text -> T.Text

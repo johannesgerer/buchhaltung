@@ -308,3 +308,8 @@ buchhaltung commitHledger -a -m'checking account ok'
 ```
 
 this commits all changes to the git repository that contains the [`mainLedger`](config.yml) file. The commit message will also contain the output of `buchhaltung lb` and `buchhaltung ledger balance --end tomorrow`.
+
+# Todo
+
+Try to get Barclays UK direct feed working?
+https://stackoverflow.com/questions/3469628/banking-api-protocol

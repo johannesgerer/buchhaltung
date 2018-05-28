@@ -103,10 +103,10 @@ findDuplicates key@(ams,acc,day) = lift $ gets $ \old ->
 
 findFuzzy :: Monad m => Transaction -> M r m [(KeyIx,Aged Entry)]
 findFuzzy = fmap concat . mapM (findDuplicates . deriveKey) . alternatives
-  where alternatives x = [x, conditionalDateShift x]
+  where alternatives x = [x] ++ conditionalDateShift x
         conditionalDateShift tx = if paccount (head (tpostings tx)) == "Aktiva:Konten:Comdirect:Visa"
-                                  then tx { tdate = addDays (-1) $ tdate tx }
-                                  else tx
+          then map (\s -> tx { tdate = addDays s $ tdate tx }) [-1,1]
+          else []
 
 -- | check single new entry against a list of conflict
 -- candidates, and insert new entry (if list is empty), or keep old
