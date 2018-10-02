@@ -43,6 +43,7 @@ import           Data.Maybe
 import           Data.Ord
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as TL
 import           Data.Text.Lazy.Encoding
@@ -151,7 +152,7 @@ saveChanges
 saveChanges journal change = do
   journalPath <- absolute =<< readLedger imported
   liftIO $ do
-    ej <- readJournalFile Nothing Nothing False -- ignore balance assertions
+    ej <- readJournalFile definputopts -- ignore balance assertions
           journalPath
     -- print $ length todos
     -- putStr $ unlines $ show <$> todos
@@ -336,15 +337,13 @@ normalizeMixedAmountWith
 normalizeMixedAmountWith f (Mixed ams) = Mixed $ g <$> ams
   where g a =  a{aquantity = normalizeDecimal $ f a}
   
-data Importer env = Importer
-  { iModifyHandle :: Maybe (Handle -> IO ())
-  -- ^ e.g. 'windoof'
-  , iImport :: T.Text -> CommonM (env, Maybe Version) [ImportedEntry]
-  }
+type Importer env = Either T.Text Handle -> CommonM (env, Maybe Version) [ImportedEntry]
 
-windoof :: Maybe (Handle -> IO ())
-windoof = Just $ \h -> hSetEncoding h latin1
-                       >> hSetNewlineMode h universalNewlineMode
+windoof :: Handle -> IO T.Text
+windoof h = do hSetNewlineMode h universalNewlineMode
+               hSetEncoding h latin1
+               T.hGetContents h
+                          
 
 parseDate :: String -> T.Text -> Day
 parseDate format = parseTimeOrError True defaultTimeLocale format . T.unpack
@@ -379,6 +378,7 @@ data CsvImport env = CSV
   , cVersion     :: Version
   , cSeparator :: Char
   , cPostings :: [env -> CsvPostingImport]
+  , cGetContents :: Handle -> IO T.Text
   }
 
 data Description env = Field T.Text | Const T.Text | Read (env -> T.Text)
@@ -461,7 +461,7 @@ loadJournal journals options = do
     $ intercalateL "\n" $ show <$> jfiles
   journal <- liftIO $
       -- to conquer problems with the `instance Monoid Journal`
-     right mconcat' . sequence <$> mapM (readJournalFile Nothing Nothing False) jfiles
+     right mconcat' . sequence <$> mapM (readJournalFile definputopts) jfiles
   either (throwError . T.pack) return journal
   where jfiles = runReader (catMaybes <$> mapM (mapM absolute <=< readLedger)
                            journals) options

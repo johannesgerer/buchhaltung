@@ -67,7 +67,7 @@ run (Import version file action) options = runImport action
 run (Update version doMatch doRequest) options = do
   res <- runAQ options $ aqbankingListtrans doRequest
   void $ runRWST
-    (mapM (importWrite $ iImport aqbankingImporter) res)
+    (mapM (importWrite . aqbankingImporter . Left) res)
     options{oEnv = ((), version)} ()
   when doMatch $ run Match options
 

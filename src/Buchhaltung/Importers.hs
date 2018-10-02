@@ -43,11 +43,14 @@ import           Debug.Trace
 import           Formatting (sformat, (%), shown)
 import qualified Formatting.ShortFormatters as F
 import           Safe as S
+import           System.IO
 import           Text.Parsec
 import qualified Text.ParserCombinators.Parsec as C
 import           Text.Printf
 import qualified Text.Regex.TDFA as R
 import           Text.Regex.TDFA.Text ()
+import qualified Data.ByteString as B
+import qualified Data.Text.Encoding as T
 
 -- * CSV
 
@@ -74,15 +77,15 @@ processLines f = return . (first $ T.unlines . f . T.lines)
 csvImport = csvImportPreprocessed return
 
 csvImportPreprocessed :: Preprocessor env1 env2
-                    -> VersionedCSV env2
-                    -> T.Text
-                    -> CommonM (env1, Maybe Version) [ImportedEntry]
-csvImportPreprocessed pp versionedCsv csv1 = do
+                      -> VersionedCSV env2
+                      -> Importer env1
+csvImportPreprocessed pp versionedCsv textOrHandle = do
   (env, version) <- reader oEnv
-  (csv2, env2) <- pp (csv1, env)
   (form, g@CSV{cHeader=expected,
      cDescription = desc,
      cVersion = version }) <- headerInfo versionedCsv version
+  csv1 <- either return (liftIO . cGetContents g) textOrHandle
+  (csv2, env2) <- pp (csv1, env)
   let toEntry x = ImportedEntry
           { ieT = genTrans date (vdate =<< cVDate g x)
                   (getCsvConcatDescription env2 desc x)
@@ -116,7 +119,7 @@ csvImportPreprocessed pp versionedCsv csv1 = do
 -- imports output from @aqbankingcli listtrans@
 
 aqbankingImporter :: Importer env
-aqbankingImporter = Importer Nothing $ csvImport aqbankingImport
+aqbankingImporter = csvImport aqbankingImport
 
 aqbankingImport :: VersionedCSV env
 aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
@@ -171,6 +174,7 @@ aqbankingImport = toVersionedCSV (SFormat "aqBanking" $ DefaultVersion "4")
     , cDescription = Field <$> desc
     , cBayes = ["remoteBankCode","remoteAccountNumber"]
                ++ desc
+    , cGetContents = T.hGetContents
     }]
   where desc = concatMap (\(f,i) -> (f <>) <$> "":i)
                [ ("remoteName", ["1"])
@@ -310,7 +314,7 @@ csv_header = undefined
 -- * PNC Bank USA transaction logs
 
 pncbankImporter :: Importer T.Text
-pncbankImporter = Importer windoof $ csvImport pncbank
+pncbankImporter = csvImport pncbank
 
 pncbank :: VersionedCSV T.Text
 pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
@@ -339,6 +343,7 @@ pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
         , cDescription = Field <$> desc
         , cBayes = desc
         , cVersion = "May 2017"
+        , cGetContents = windoof
         }
   ]
   where desc = ["Description"]
@@ -347,7 +352,7 @@ pncbank = toVersionedCSV (SFormat "pncbank" $ DefaultVersion "May 2017")
 -- * Barclaycard US transaction logs
 
 barclaycardusImporter :: Importer ()
-barclaycardusImporter = Importer windoof $ csvImportPreprocessed barclaycardPreprocessor barclaycardus
+barclaycardusImporter = csvImportPreprocessed barclaycardPreprocessor barclaycardus
 
 barclaycardPreprocessor :: Preprocessor () AccountId
 barclaycardPreprocessor (wholeFile, _) =
@@ -383,6 +388,7 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
         , cDescription = Field <$> desc
         , cBayes = "Category" : desc
         , cVersion = "May 2017"
+        , cGetContents = windoof
         }
   ]
   where desc = ["Description"]
@@ -390,7 +396,7 @@ barclaycardus = toVersionedCSV (SFormat "barclaycard" $ DefaultVersion "May 2017
 -- * Revolut Csv
   
 revolutImporter :: Importer (RevolutSettings ())
-revolutImporter = Importer Nothing $ csvImportPreprocessed extractCurrency revolut
+revolutImporter = csvImportPreprocessed extractCurrency revolut
 
 extractCurrency :: Preprocessor (RevolutSettings ()) (RevolutSettings T.Text)
 extractCurrency (text, env) = do
@@ -462,6 +468,7 @@ revolut = toVersionedCSV (SFormat "revolut" $ DefaultVersion "2017")
                                , Field "Category" ]
               , cBayes = ["Reference", "Category", "Notes" ]
               , cVersion = "2017"
+              , cGetContents = T.hGetContents
               }
   
 -- remove currency signs and append corresponding currency name
@@ -480,7 +487,7 @@ currencySymbols = [ ("$", "USD")
 -- * Monefy Csv
   
 monefyImporter :: Importer MonefySettings
-monefyImporter = Importer Nothing $ csvImportPreprocessed unambiguousHeader monefy
+monefyImporter = csvImportPreprocessed unambiguousHeader monefy
 
 -- | replace the header by one with unique column names (currency2)
 unambiguousHeader :: Preprocessor env env
@@ -527,6 +534,7 @@ monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
                          , Field "description"]
         , cBayes = []
         , cVersion = "2017"
+        , cGetContents = T.hGetContents
         }
   ]
   where amt = (\a b -> textstrip $ T.replace "," "" a <> " " <> b)
@@ -535,7 +543,7 @@ monefy = toVersionedCSV (SFormat "monefy" $ DefaultVersion "2017")
 -- * BarclaysUk International CSV export
 
 barclaysUkImporter :: Importer ()
-barclaysUkImporter = Importer Nothing $ csvImport barclaysUk
+barclaysUkImporter = csvImport barclaysUk
   
 barclaysUk :: VersionedCSV ()
 barclaysUk = toVersionedCSV (SFormat "barclaysUk" $ DefaultVersion "2017")
@@ -564,6 +572,7 @@ barclaysUk = toVersionedCSV (SFormat "barclaysUk" $ DefaultVersion "2017")
         , cDescription = Field <$> desc 
         , cBayes = desc
         , cVersion = "2017"
+        , cGetContents = T.hGetContents
         }
   ]
   where accountBank = (g . T.splitOn " ") . getCsv "Account"
@@ -574,7 +583,7 @@ barclaysUk = toVersionedCSV (SFormat "barclaysUk" $ DefaultVersion "2017")
 -- * Natwest International CSV export
 
 natwestIntlImporter :: Importer ()
-natwestIntlImporter = Importer Nothing $ csvImportPreprocessed (processLines $ tail) natwestIntl
+natwestIntlImporter = csvImportPreprocessed (processLines $ tail) natwestIntl
   
 natwestIntl :: VersionedCSV ()
 natwestIntl = toVersionedCSV (SFormat "natwestIntl" $ DefaultVersion "2017")
@@ -607,6 +616,7 @@ natwestIntl = toVersionedCSV (SFormat "natwestIntl" $ DefaultVersion "2017")
         , cBayes = [" Description"
                    ," Type"]
         , cVersion = "2017"
+        , cGetContents = T.hGetContents
         }
   ]
   where accountBank = (g . T.splitOn "-" . T.tail ) . getCsv " Account Number"
@@ -692,7 +702,7 @@ natwestIntl = toVersionedCSV (SFormat "natwestIntl" $ DefaultVersion "2017")
 -- * Comdirect Visa Statements
 
 comdirectVisaImporter :: Importer T.Text
-comdirectVisaImporter = Importer windoof $ csvImport comdirectVisa
+comdirectVisaImporter = csvImport comdirectVisa
 
 
 comdirectVisa :: VersionedCSV T.Text
@@ -723,6 +733,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
         , cBayes = desc
         , cVersion = "manuell"
          -- hand extracted from @pdftotext -layout@
+        , cGetContents = windoof
         }
   , CSV
         { cFilter  =(/= "") . getCsv "Buchungstag"
@@ -747,6 +758,7 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
         , cDescription = Field <$> desc2
         , cBayes = desc2
         , cVersion = "export"
+        , cGetContents = windoof
         }
   ]
   where desc = ["Vorgang"
@@ -766,12 +778,12 @@ comdirectVisa = toVersionedCSV (SFormat "visa" $ DefaultVersion "manuell")
 -- @
 
 paypalImporter :: Importer T.Text
-paypalImporter = Importer windoof $ csvImport paypalImport
+paypalImporter = csvImport paypalImport
 
 paypalImport :: VersionedCSV T.Text
 paypalImport =
-  let base = CSV
-        { cFilter  = (/= "Storniert") . getCsv " Status"
+  let base2 state net ccy = CSV
+        { cFilter  = (/= "Storniert") . getCsv state
         , cDate = parseDateDE . getCsv "Datum"
         , cStrip = False
         , cVDate = const Nothing
@@ -779,8 +791,7 @@ paypalImport =
         , cPostings =
           [ \env -> CsvPosting
             { cAccount = const env
-            , cAmount = comma . getCsvConcat [ " Netto"
-                                             , " Währung"]
+            , cAmount = comma . getCsvConcat [net, ccy]
             , cSuffix = Nothing
             , cNegate = const False
             }]
@@ -789,7 +800,9 @@ paypalImport =
         , cHeader = []
         , cBayes = ["undefined"]
         , cDescription = [Field "undefined"]
+        , cGetContents = windoof
         }
+      base = base2 " Status" " Netto" " W\228hrung"
       desc = Field <$> [" Name"
                        ," Verwendungszweck"
                        ," Art"
@@ -798,8 +811,74 @@ paypalImport =
                        ," Artikelbezeichnung"
                        ," Typ"
                        ," Zeit"]
-  in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2017")
-  [base { cVersion = "2017"
+  in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2018")
+  [(base2 "Status" "Netto" "W\228hrung") { cVersion = "2018"
+        , cGetContents = \h -> do hSetEncoding h utf8_bom
+                                  T.hGetContents h
+        , cHeader =
+            ["Datum"
+            ,"Uhrzeit"
+            ,"Zeitzone"
+            ,"Name"
+            ,"Typ"
+            ,"Status"
+            ,"W\228hrung"
+            ,"Brutto"
+            ,"Geb\252hr"
+            ,"Netto"
+            ,"Absender E-Mail-Adresse"
+            ,"Empf\228nger E-Mail-Adresse"
+            ,"Transaktionscode"
+            ,"Lieferadresse"
+            ,"Adress-Status"
+            ,"Artikelbezeichnung"
+            ,"Artikelnummer"
+            ,"Versand- und Bearbeitungsgeb\252hr"
+            ,"Versicherungsbetrag"
+            ,"Umsatzsteuer"
+            ,"Option 1 Name"
+            ,"Option 1 Wert"
+            ,"Option 2 Name"
+            ,"Option 2 Wert"
+            ,"Zugeh\246riger Transaktionscode"
+            ,"Rechnungsnummer"
+            ,"Zollnummer"
+            ,"Anzahl"
+            ,"Empfangsnummer"
+            ,"Guthaben"
+            ,"Adresszeile 1"
+            ,"Adresszusatz"
+            ,"Ort"
+            ,"Bundesland"
+            ,"PLZ"
+            ,"Land"
+            ,"Telefon"
+            ,"Betreff"
+            ,"Hinweis"
+            ,"L\228ndervorwahl"
+            ,"Auswirkung auf Guthaben"]
+        , cBayes = ["Name"
+                   ,"Absender E-Mail-Adresse"
+                   ,"Empf\228nger E-Mail-Adresse"
+                   ,"Artikelbezeichnung"
+                   ,"Typ"
+                   ,"Status"
+                   ,"Adress-Status"
+                   ,"Adresszeile 1"
+                   ,"Ort"
+                   ,"PLZ"
+                   ,"Land"
+                   ,"Bundesland"
+                   ,"Telefon"
+                   ,"Betreff"
+                   ,"Hinweis"
+                   ]
+        , cDescription = Field <$> ["Name"
+                       ,"Artikelbezeichnung"
+                       ,"Typ"
+                       ,"Uhrzeit"]
+        },
+   base { cVersion = "2017"
         , cHeader = ["Datum"
                     ," Zeit" 
                     ," Zeitzone" 

@@ -198,8 +198,10 @@ data Action m a u = Comp (Action m a u) (Action m a u) |
                                     -- ^ an action annotated with a
                                     --   help string.
 
+instance Semigroup (Action m a u) where
+  (<>) = Comp
+
 instance Monoid (Action m a u) where
-  mappend = Comp
   mempty = Seq []
               
 -- | Annotate a command with a help string.

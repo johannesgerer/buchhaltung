@@ -582,12 +582,12 @@ askDate def = do
                          ,"next"]
 
 -- | HLedger's 'smartdate' and code
-dateandcodep :: MP.Parsec Void T.Text (SmartDate, T.Text)
+dateandcodep :: MP.Parsec CustomErr T.Text (SmartDate, T.Text)
 dateandcodep = do d <- smartdate
                   c <- optional codep
                   many spacenonewline
                   MP.eof
-                  return (d, maybe "" T.pack c)
+                  return (d, fromMaybe mempty c)
 
 myAskAccount
   :: User
@@ -627,44 +627,44 @@ askAmount def pr init = do
 
 parseAmount
   :: Journal
-     -> T.Text -> Either (MP.ParseError Char Void) AssertedAmount
+     -> T.Text -> Either (MP.ParseError Char CustomErr) AssertedAmount
 parseAmount j = parseWithState' j $
                 ((flip $ AA "") <$>
                   (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
                   <*> partialbalanceassertionp
                                     ) <* MP.eof
 
--- | (unused) overwrite upstream behavior to use defined or incurred
--- commodities
-_amountp2 = MP.try leftsymbolamountp
-  MP.<|> MP.try rightsymbolamountp
-  MP.<|> nosymbolamountp2
+-- -- | (unused) overwrite upstream behavior to use defined or incurred
+-- -- commodities
+-- _amountp2 = MP.try leftsymbolamountp
+--   MP.<|> MP.try rightsymbolamountp
+--   MP.<|> nosymbolamountp2
 
-nosymbolamountp2 :: Monad m => JournalParser m Amount
-nosymbolamountp2 = do
-  (q,prec,mdec,mgrps) <- lift $ numberp Nothing
-  p <- priceamountp
-  -- apply the most recently seen default commodity and style to this commodityless amount
-  defcs <- getDefaultCommodityAndStyle2 <$> get
-  let (c,s) = case defcs of
-        Just (defc,defs) -> (defc, defs{asprecision=max (asprecision defs) prec})
-        Nothing          -> ("", amountstyle{asprecision=prec, asdecimalpoint=mdec, asdigitgroups=mgrps})
-  return $ Amount c q p s False
-  MP.<?> "no-symbol amount"
+-- nosymbolamountp2 :: Monad m => JournalParser m Amount
+-- nosymbolamountp2 = do
+--   (q,prec,mdec,mgrps) <- lift $ numberp Nothing
+--   p <- priceamountp
+--   -- apply the most recently seen default commodity and style to this commodityless amount
+--   defcs <- getDefaultCommodityAndStyle2 <$> get
+--   let (c,s) = case defcs of
+--         Just (defc,defs) -> (defc, defs{asprecision=max (asprecision defs) prec})
+--         Nothing          -> ("", amountstyle{asprecision=prec, asdecimalpoint=mdec, asdigitgroups=mgrps})
+--   return $ Amount c q p s False
+--   MP.<?> "no-symbol amount"
 
-getDefaultCommodityAndStyle2
-  :: Journal
-  -> Maybe (CommoditySymbol,AmountStyle)
-getDefaultCommodityAndStyle2
-  Journal{jparsedefaultcommodity=def
-         ,jcommodities=comms
-         ,jinferredcommodities=inferred} =
-  let mm = listToMaybe . M.toList in
-    asum
-    [def
-    ,traverse cformat =<< mm comms
-    ,mm inferred
-    ]
+-- getDefaultCommodityAndStyle2
+--   :: Journal
+--   -> Maybe (CommoditySymbol,AmountStyle)
+-- getDefaultCommodityAndStyle2
+--   Journal{jparsedefaultcommodity=def
+--          ,jcommodities=comms
+--          ,jinferredcommodities=inferred} =
+--   let mm = listToMaybe . M.toList in
+--     asum
+--     [def
+--     ,traverse cformat =<< mm comms
+--     ,mm inferred
+--     ]
 
 
 askPercent :: IO Decimal

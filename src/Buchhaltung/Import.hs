@@ -71,15 +71,14 @@ fillTxn datetime e@(ImportedEntry t postings source) = do
 importCat ::
      Maybe FilePath
   -- ^ File to check for already processed transactions
-     -> (T.Text -> CommonM env [ImportedEntry])
-     -> T.Text
+     -> CommonM env [ImportedEntry]
      -> CommonM env Journal
-importCat journalPath conv text  = do
+importCat journalPath ientries = do
   oldJ <- liftIO $ maybe (return mempty)
-    (fmap (either error id) . readJournalFile Nothing Nothing False)
+    (fmap (either error id) . readJournalFile definputopts)
     journalPath
   datetime <- liftIO $ fshow <$> getZonedTime
-  entries <- mapM (fillTxn datetime) =<< conv text 
+  entries <- mapM (fillTxn datetime) =<< ientries
   newTxns <- addNewEntriesToJournal entries oldJ
   liftIO $ hPutStrLn stderr $ printf "found %d new of %d total transactions"
     (length newTxns - length (jtxns oldJ)) $ length entries
@@ -93,27 +92,17 @@ dateAmountSource tag a b =
   <> comparing (pamount . head . tpostings) a b
   <> comparing (fmap wSource . extractSource tag) a b
 
-importWrite
-  :: (T.Text -> CommonM env [ImportedEntry])
-  -> T.Text
-  -> CommonM env ()
-importWrite conv text =do
+importWrite :: CommonM env [ImportedEntry] -> CommonM env ()
+importWrite ientries = do
   journalPath <- absolute =<< readLedger imported
   liftIO . writeJournal journalPath
-    =<< importCat (Just journalPath) conv text
+    =<< importCat (Just journalPath) ientries
 
-importHandleWrite
-  :: Importer env -> FullOptions (env, Maybe Version) -> Handle -> ErrorT IO ()
-importHandleWrite (Importer chH conv) options handle = do
-  text <- liftIO $ do
-    maybe (return ()) ($ handle) chH
-    liftIO (T.hGetContents handle)
-  void $ runRWST (importWrite conv text) options ()
-  
 importReadWrite
   :: Importer env -> FullOptions (env, Maybe Version) -> FilePath -> ErrorT IO ()
-importReadWrite imp opt file =
-  withFileM file ReadMode $ importHandleWrite imp opt
+importReadWrite conv options file =
+  withFileM file ReadMode $ \handle ->
+    void $ runRWST (importWrite $ conv $ Right handle) options ()
 
     
 writeJournal :: FilePath -> Journal -> IO ()
