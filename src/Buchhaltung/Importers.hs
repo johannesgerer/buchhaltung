@@ -1184,7 +1184,7 @@ paypalEngImport =
         , cGetContents = windoof
         }
       base = base2 " Status" " Net" " Currency"
-  in toVersionedCSV (SFormat "paypal" $ DefaultVersion "2018")
+  in toVersionedCSV (SFormat "paypalEng" $ DefaultVersion "2018")
   [(base2 "Status" "Net" "Currency") { cVersion = "2018"
         , cGetContents = \h -> do hSetEncoding h utf8_bom
                                   T.hGetContents h
