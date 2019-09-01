@@ -188,7 +188,15 @@ importOpts =
   (progDesc $ concat ["import from german Paypal CSV export with "
                      ,"\"alle guthaben relevanten Zahlungen "
                      ,"(kommagetrennt) ohne warenkorbdetails\". "
-                     ,"versions: 2013, 2014, 2016, 2017"])
+                     ,"versions: 2013, 2014, 2016, 2017, 2018"])
+
+  <>
+  command' "paypalEng"
+  (PaypalEng . T.pack <$> strArgument
+    (help "paypal username (as configured in 'bankAccounts')"
+      <> metavar "PAYPAL_USERNAME"))
+  (progDesc $ concat ["import from Paypal CSV export. "
+                     ,"version: 2018"])
 
   <>
   command' "pncbank"

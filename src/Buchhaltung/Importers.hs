@@ -7,6 +7,7 @@
 module Buchhaltung.Importers
 (
   paypalImporter
+  , paypalEngImporter
   , aqbankingImporter
   , comdirectVisaImporter
   , monefyImporter
@@ -1155,6 +1156,103 @@ paypalImport =
         , cDescription = desc
          }]
 
+-- * Paypal (English)
+
+paypalEngImporter :: Importer T.Text
+paypalEngImporter = csvImport paypalEngImport
+
+paypalEngImport :: VersionedCSV T.Text
+paypalEngImport =
+  let base2 state net ccy = CSV
+        { cFilter  = (/= "Canceled") . getCsv state
+        , cDate = parseDate "%d/%m/%Y" . getCsv "Date"
+        , cStrip = False
+        , cVDate = const Nothing
+        , cBank = const $ const "Paypal"
+        , cPostings =
+          [ \env -> CsvPosting
+            { cAccount = const env
+            , cAmount = getCsvConcat [net, ccy]
+            , cSuffix = Nothing
+            , cNegate = const False
+            }]
+        , cSeparator = ','
+        , cVersion = "undefined"
+        , cHeader = []
+        , cBayes = ["undefined"]
+        , cDescription = [Field "undefined"]
+        , cGetContents = windoof
+        }
+      base = base2 " Status" " Net" " Currency"
+  in toVersionedCSV (SFormat "paypalEng" $ DefaultVersion "2018")
+  [(base2 "Status" "Net" "Currency") { cVersion = "2018"
+        , cGetContents = \h -> do hSetEncoding h utf8_bom
+                                  T.hGetContents h
+        , cHeader =
+            ["Date"
+            ,"Time"
+            ,"Time zone"
+            ,"Name"
+            ,"Type"
+            ,"Status"
+            ,"Currency"
+            ,"Gross"
+            ,"Fee"
+            ,"Net"
+            ,"From Email Address"
+            ,"To Email Address"
+            ,"Transaction ID"
+            ,"Shipping Address"
+            ,"Address Status"
+            ,"Item Title"
+            ,"Item ID"
+            ,"Postage and Packaging Amount"
+            ,"Insurance Amount"
+            ,"VAT"
+            ,"Option 1 Name"
+            ,"Option 1 Value"
+            ,"Option 2 Name"
+            ,"Option 2 Value"
+            ,"Reference Txn ID"
+            ,"Invoice Number"
+            ,"Custom Number"
+            ,"Quantity"
+            ,"Receipt ID"
+            ,"Balance"
+            ,"Address Line 1"
+            ,"Address Line 2/District/Neighbourhood"
+            ,"Town/City"
+            ,"County"
+            ,"Postcode"
+            ,"Country"
+            ,"Contact Phone Number"
+            ,"Subject"
+            ,"Note"
+            ,"Country Code"
+            ,"Balance Impact"]
+        , cBayes = ["Name"
+                   ,"From Email Address"
+                   ,"To Email Address"
+                   ,"Item Title"
+                   ,"Type"
+                   ,"Status"
+                   ,"Address Status"
+                   ,"Address Line 1"
+                   ,"Town/City"
+                   ,"Postcode"
+                   ,"Country"
+                   ,"County"
+                   ,"Contact Phone Number"
+                   ,"Subject"
+                   ,"Note"
+                   ]
+        , cDescription = Field <$> ["Name"
+                       ,"Item Title"
+                       ,"Note"
+                       ,"Type"
+                       ,"Time"]
+        }]
+
 -- * other stuff
 
 
@@ -1265,6 +1363,7 @@ defaultFields
      m (M.Map (SFormat ()) (M.Map Version [T.Text]))
 defaultFields = fromListUnique . fmap (first $ (() <$))
   =<< sequence [toBayes paypalImport
+               ,toBayes paypalEngImport
                ,toBayes aqbankingImport
                ,toBayes barclaycardus
                ,toBayes pncbank
