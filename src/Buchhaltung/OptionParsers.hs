@@ -191,6 +191,14 @@ importOpts =
                      ,"versions: 2013, 2014, 2016, 2017"])
 
   <>
+  command' "paypalEng"
+  (PaypalEng . T.pack <$> strArgument
+    (help "paypal username (as configured in 'bankAccounts')"
+      <> metavar "PAYPAL_USERNAME"))
+  (progDesc $ concat ["import from Paypal CSV export. "
+                     ,"version: 2018"])
+
+  <>
   command' "pncbank"
   (Pncbank . T.pack <$> strArgument
     (help "PNC account identifier or number (as configured in 'bankAccounts')"

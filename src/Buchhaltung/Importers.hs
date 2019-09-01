@@ -1165,14 +1165,14 @@ paypalEngImport :: VersionedCSV T.Text
 paypalEngImport =
   let base2 state net ccy = CSV
         { cFilter  = (/= "Canceled") . getCsv state
-        , cDate = parseDateDE . getCsv "Date"
+        , cDate = parseDate "%d/%m/%Y" . getCsv "Date"
         , cStrip = False
         , cVDate = const Nothing
         , cBank = const $ const "Paypal"
         , cPostings =
           [ \env -> CsvPosting
             { cAccount = const env
-            , cAmount = comma . getCsvConcat [net, ccy]
+            , cAmount = getCsvConcat [net, ccy]
             , cSuffix = Nothing
             , cNegate = const False
             }]
@@ -1229,7 +1229,29 @@ paypalEngImport =
             ,"Subject"
             ,"Note"
             ,"Country Code"
-            ,"Balance Impact"]}]
+            ,"Balance Impact"]
+        , cBayes = ["Name"
+                   ,"From Email Address"
+                   ,"To Email Address"
+                   ,"Item Title"
+                   ,"Type"
+                   ,"Status"
+                   ,"Address Status"
+                   ,"Address Line 1"
+                   ,"Town/City"
+                   ,"Postcode"
+                   ,"Country"
+                   ,"County"
+                   ,"Contact Phone Number"
+                   ,"Subject"
+                   ,"Note"
+                   ]
+        , cDescription = Field <$> ["Name"
+                       ,"Item Title"
+                       ,"Note"
+                       ,"Type"
+                       ,"Time"]
+        }]
 
 -- * other stuff
 
