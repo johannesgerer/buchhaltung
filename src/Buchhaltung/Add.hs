@@ -299,7 +299,7 @@ clearNthPosting n t = t{tpostings=p'}
 -- * Transaction suggestions
 
 data Asserted a = AA { aComment :: Comment
-                     , aAssertion :: BalanceAssertion
+                     , aAssertion :: Maybe BalanceAssertion
                      , aAmount :: a }
                 deriving (Functor, Show)
 
@@ -313,7 +313,7 @@ fromPosting = AA <$> pcomment <*> pbalanceassertion <*> pamount
 
 showAssertedAmount :: Asserted MixedAmount -> T.Text
 showAssertedAmount a = showMixedAmount2 (aAmount a) <>
-  maybe "" ((" = " <>) . showAmount2 . fst) (aAssertion a)
+  maybe "" ((" = " <>) . showAmount2 . baamount) (aAssertion a)
 
 
 -- | Ask an amount, and return transactions matching the entered
@@ -627,12 +627,12 @@ askAmount def pr init = do
 
 parseAmount
   :: Journal
-     -> T.Text -> Either (MP.ParseError Char CustomErr) AssertedAmount
+     -> T.Text -> Either (MP.ParseErrorBundle T.Text CustomErr) AssertedAmount
 parseAmount j = parseWithState' j $
-                ((flip $ AA "") <$>
-                  (fmap (Mixed . pure) $ amountp MP.<|> return missingamt)
-                  <*> partialbalanceassertionp
-                                    ) <* MP.eof
+                ((flip $ AA "")
+                  <$> fmap (Mixed . pure) (amountp MP.<|> return missingamt)
+                  <*> fmap Just balanceassertionp
+                ) <* MP.eof
 
 -- -- | (unused) overwrite upstream behavior to use defined or incurred
 -- -- commodities
@@ -825,7 +825,7 @@ roundP p = p{epPosting = r1 <$> epPosting p}
 assignOpenBalance :: Decimal -> EditablePostings -> EditablePostings
 assignOpenBalance c old@LZ{past=(pr@EditablePosting{epAccount=sac} E.:| ps)} =
   moveToNextEmpty $ old{past= roundP (newp $ epPosting pr) E.:| ps}
-  where balance = divideMixedAmount (totalBalance all) c
+  where balance = divideMixedAmount c (totalBalance all)
         all = integrate old
         newp Nothing = addPosting sac (Just $ AA "" Nothing balance) pr
         newp (Just op) = pr{epPosting = Just op{pamount= balance + pamount op }}
@@ -840,7 +840,7 @@ showEditablePosting LZ{past= pr E.:| ps ,future=fut} =
          (epNumber x) (name $ getUser $ present $ epUser x) mark
          $ epAccount x
        ,maybe "" (showMissing . pamount) $ epPosting x
-       ,maybe "" (("= " <>) . showAmount2 . fst)
+       ,maybe "" (("= " <>) . showAmount2 . baamount)
         $ pbalanceassertion =<< epPosting x
        ,maybe "" fshow $ epFreq x
        ] | (marked,x) <- postings ]
