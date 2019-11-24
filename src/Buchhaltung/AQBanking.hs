@@ -7,6 +7,7 @@ module Buchhaltung.AQBanking where
 import           Buchhaltung.Common
 import           Control.Monad.RWS.Strict
 import           Data.Maybe
+import           Text.Regex.TDFA
 import qualified Data.Text as T
 import           Formatting ((%))
 import qualified Formatting.ShortFormatters as F
@@ -38,7 +39,11 @@ runProc run args (argsC, bin) = liftIO $ run bin $ argsC ++ args
 
 callAqhbci :: AAQM ()
 callAqhbci args = runProc callProcess args
-            =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-C"
+            =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-D"
+
+readAqhbci :: AAQM String
+readAqhbci args = runProc readProcess' args
+            =<< askExec aqhbciToolExecutable "aqhbci-tool4" "-D"
 
 runAqbanking'
   :: (FilePath -> [String] -> IO b) -> AAQM b
@@ -69,7 +74,7 @@ aqbankingListtrans doRequest = do
                   , "--ignoreUnsupported"
                   ]
 
-  T.pack <$> readAqbanking ["listtrans"
+  T.pack <$> readAqbanking ["export"
                            ]
 
 aqbankingSetup :: AQM ()
@@ -83,7 +88,7 @@ aqbankingSetup = do
   typ <- readConn $ return . aqType
   when (typ /= PinTan) $ throwError $ mconcat
     ["modes other than PinTan have to be setup manually. Refer to the "
-    ,"AQBanking manual. Use the '-C' to point to the configured "
+    ,"AQBanking manual. Use the '-D' to point to the configured "
     ,"'configDir'."]
   liftIO $ createDirectoryIfMissing True path
   callAqhbci [ "adduser", "-t", "pintan", "--context=1"
@@ -92,9 +97,44 @@ aqbankingSetup = do
             , "-s", aqUrl conn
             , "-N", aqName conn
             , "--hbciversion=" <> toArg (aqHbciv conn)]
-  callAqhbci [ "getsysid" ]
-  callAqhbci [ "getaccounts" ]
+  id <- getUniqueID
+  callAqhbci [ "getbankinfo", "-u" , id]
+  callAqhbci [ "getsysid", "-u" , id]
+  chooseITANMode id
+  callAqhbci [ "getaccounts", "-u", id ]
+  localUniqueIDs <- listAccounts
+  sequence_ $ callAqhbci . ([ "getaccsepa", "-a" ] ++) . (:[]) <$> localUniqueIDs
   callAqhbci [ "listaccounts" ]
+  lift . lift . putStrLn $
+    "NOTE: If this didn't work, you might need to set up aqbanking manually "
+    ++ "instead. See e.g. "
+    ++ "https://www.aquamaniac.de/rdm/projects/aqbanking/wiki/SetupPinTan"
+
+chooseITANMode :: String -> AQM ()
+chooseITANMode id = do
+  callAqhbci [ "getitanmodes", "-u", id]
+  ss <- lines <$> readAqhbci [ "listitanmodes", "-u", id]
+  let available = filter (=~ (".* \\[available" :: String)) ss
+  let (_, _, _, [n]) =
+        head available =~ ("^- ([[:digit:]]+)" :: String) :: (String, String, String, [String])
+  callAqhbci [ "setitanmode", "-u", id, "-m", n]
+
+listAccounts :: AQM [String]
+listAccounts = do
+  ss <- lines <$> readAqhbci [ "listaccounts", "-v" ]
+  return $ localUniqueID <$> ss
+  where
+    localUniqueID s =
+      let (_, _, _, [s']) =
+            (s =~ (".* LocalUniqueId: (.*)" :: String) :: (String, String, String, [String]))
+      in s'
+
+getUniqueID :: AQM String
+getUniqueID = do
+  s <- readAqhbci [ "listusers" ]
+  let (_, _, _, [s']) =
+        (s =~ (".* Unique Id: (.*)\n" :: String) :: (String, String, String, [String]))
+    in return s'
 
 -- * Utils
 
@@ -108,6 +148,7 @@ addContext args@(cmd:_) = do
 
 withContext "listbal"    = return True
 withContext "listtrans"  = return True
+withContext "export"     = return True
 withContext "request"    = return True
 withContext "listaccs"   = return False
 withContext cmd          = throwFormat
