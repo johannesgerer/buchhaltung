@@ -1,2 +1,5 @@
-# resolver: nightly-2018-10-01
-resolver: lts-12.11
+resolver: lts-14.15
+
+extra-deps:
+  - hledger-lib-1.15.2
+  - hledger-1.15.2
